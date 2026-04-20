@@ -68,7 +68,7 @@
 <section class="flex flex-col gap-3">
   <div class="flex items-start gap-3">
     <ServiceBadge serviceId={popup.contentContext?.serviceId} />
-    <div class="space-y-1">
+    <div class="min-w-0 space-y-1">
       <p class="m-0 text-sm font-semibold leading-5">
         {title}
       </p>
@@ -77,7 +77,7 @@
   </div>
 
   <button
-    class="inline-flex h-10 items-center justify-center rounded-lg border border-stone-900 bg-stone-900 px-4 text-base font-bold text-white shadow-sm transition-colors ease-out hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-45 focus-ring"
+    class="btn-primary"
     type="button"
     onclickcapture={onCreateRoom}
     disabled={!canAct}
@@ -94,10 +94,7 @@
       handleJoin();
     }}
   >
-    <label
-      class="text-xs font-semibold uppercase tracking-wide text-stone-400"
-      for="join-code"
-    >
+    <label class="label-tiny" for="join-code">
       Have a code?
     </label>
     <div class="flex gap-2">
@@ -108,12 +105,12 @@
         autocomplete="off"
         spellcheck="false"
         placeholder="ABC123"
-        class="h-9 w-full flex-1 rounded-lg border border-stone-200 bg-white px-3 font-semibold uppercase tracking-widest text-stone-900 font-mono transition-colors ease-out placeholder:text-stone-400 hover:border-stone-300 focus-visible:border-stone-300 focus-ring"
+        class="input-field flex-1 font-mono font-semibold uppercase tracking-widest"
         bind:value={joinCode}
         onkeydowncapture={handleCodeKeydown}
       />
       <button
-        class="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-stone-300 bg-stone-100 px-3 text-sm font-semibold whitespace-nowrap text-stone-900 shadow-sm transition-colors ease-out hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-45 focus-ring"
+        class="btn-secondary"
         type="submit"
         disabled={!canAct || !trimmedCode}
       >

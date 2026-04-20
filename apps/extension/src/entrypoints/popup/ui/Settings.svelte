@@ -30,40 +30,37 @@
     event.preventDefault();
     onSave({ memberName, serverUrl });
   }
-
-  const inputClass =
-    'h-9 w-full rounded-lg border border-stone-200 bg-white px-3 text-stone-900 transition-colors ease-out placeholder:text-stone-400 hover:border-stone-300 focus-visible:border-stone-300 focus-ring';
 </script>
 
 <form class="flex flex-col gap-3" onsubmitcapture={handleSave}>
   <label class="flex flex-col gap-2">
-    <span class="text-sm font-semibold text-stone-500">Display name</span>
+    <span class="label-tiny">Display name</span>
     <input
       type="text"
       maxlength="32"
       placeholder="Guest"
-      class={inputClass}
+      class="input-field"
       bind:value={memberName}
     />
   </label>
 
   {#if SHOW_SERVER_SETTINGS}
     <label class="flex flex-col gap-2">
-      <span class="text-sm font-semibold text-stone-500">Server URL</span>
+      <span class="label-tiny">Server URL</span>
       <input
         type="url"
         placeholder={DEFAULT_SERVER_URL}
-        class={inputClass}
+        class="input-field"
         bind:value={serverUrl}
       />
-      <span class="text-xs leading-5 text-stone-400">
+      <span class="text-xs leading-5 text-stone-500">
         Point the extension at a self-hosted backend.
       </span>
     </label>
   {/if}
 
   <button
-    class="inline-flex h-10 items-center justify-center rounded-lg border border-stone-900 bg-stone-900 px-4 text-base font-bold text-white shadow-sm transition-colors ease-out hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-45 focus-ring"
+    class="btn-primary"
     type="submit"
     disabled={isBusy || !dirty}
   >

@@ -55,25 +55,19 @@
     const s = total % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
   }
-
-  const seekButtonClass =
-    'inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-stone-300 bg-stone-100 px-2 text-sm font-semibold text-stone-900 shadow-sm transition-colors ease-out hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-45 focus-ring';
 </script>
 
 <section class="flex flex-col gap-3">
-  <div class="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-linear-to-b from-stone-100 to-white px-4 py-4">
+  <div class="card flex items-center justify-between gap-3 bg-linear-to-b from-stone-100 to-white">
     <div class="min-w-0 space-y-1">
-      <p class="m-0 text-xs font-semibold uppercase tracking-wide text-stone-400">Room code</p>
-      <p
-        class="m-0 text-2xl font-bold tracking-wider font-display [font-variation-settings:'SOFT'_80,'opsz'_108]"
-        aria-live="polite"
-      >
+      <p class="m-0 label-tiny">Room code</p>
+      <p class="m-0 text-2xl font-bold tracking-wider" aria-live="polite">
         {room.roomCode}
       </p>
     </div>
     <div class="flex shrink-0 items-center gap-2">
       <button
-        class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-900 shadow-sm transition-colors ease-out hover:border-stone-300 hover:bg-stone-200 focus-ring"
+        class="btn-icon"
         type="button"
         aria-label={copied ? 'Copied' : 'Copy room code'}
         onclickcapture={copyCode}
@@ -90,7 +84,7 @@
         {/if}
       </button>
       <button
-        class="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 text-sm font-semibold whitespace-nowrap text-red-700 shadow-sm transition-colors ease-out hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45 focus-ring"
+        class="btn-danger"
         type="button"
         onclickcapture={onLeave}
         disabled={isBusy}
@@ -100,7 +94,7 @@
     </div>
   </div>
 
-  <div class="space-y-3 rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+  <div class="card space-y-3">
     <div class="flex items-center gap-3">
       <ServiceBadge serviceId={playback.serviceId} size="sm" />
       <div class="min-w-0 space-y-1">
@@ -125,7 +119,7 @@
 
     <div class="grid grid-cols-3 gap-2" role="group" aria-label="Playback controls">
       <button
-        class={seekButtonClass}
+        class="btn-secondary"
         type="button"
         aria-label="Rewind 10 seconds"
         onclickcapture={() => sendUpdate({ positionDeltaSec: -10 })}
@@ -134,7 +128,7 @@
         −10s
       </button>
       <button
-        class="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-stone-950 px-2 text-sm font-bold text-white shadow-sm transition-colors ease-out hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-45 focus-ring"
+        class="btn-primary"
         type="button"
         onclickcapture={() => sendUpdate({ playing: !playback.playing })}
         disabled={!canControl}
@@ -153,7 +147,7 @@
         {/if}
       </button>
       <button
-        class={seekButtonClass}
+        class="btn-secondary"
         type="button"
         aria-label="Skip 10 seconds"
         onclickcapture={() => sendUpdate({ positionDeltaSec: 10 })}
@@ -166,7 +160,7 @@
 
   {#if room.members.length}
     <div>
-      <p class="mb-2 mt-0 text-xs font-semibold uppercase tracking-wide text-stone-400">
+      <p class="mb-2 mt-0 label-tiny">
         {room.members.length} {room.members.length === 1 ? 'member' : 'members'}
       </p>
       <ul class="m-0 flex list-none flex-wrap gap-2 p-0">
@@ -174,17 +168,17 @@
           {@const isMe = member.id === popup.roomMemberId}
           <li
             class={[
-              'inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1 pl-1 text-sm',
+              'inline-flex max-w-full items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-sm',
               isMe
-                ? 'bg-stone-950 border-stone-950 text-stone-50'
-                : 'bg-stone-100 border-stone-200 text-stone-900',
+                ? 'bg-stone-900 border-stone-900 text-stone-50'
+                : 'bg-white border-stone-200 text-stone-900',
             ]}
             title={member.name}
           >
             <span
               class={[
                 'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                isMe ? 'bg-white/20 text-stone-50' : 'bg-white text-stone-900',
+                isMe ? 'bg-white/20 text-stone-50' : 'bg-stone-100 text-stone-900',
               ]}
               aria-hidden="true"
             >

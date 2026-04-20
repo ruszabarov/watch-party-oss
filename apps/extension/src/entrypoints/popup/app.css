@@ -1,23 +1,43 @@
-@import '@fontsource-variable/manrope';
-@import '@fontsource-variable/fraunces';
 @import 'tailwindcss';
 
 @layer base {
   body {
     width: 360px;
-    font-family: 'Manrope Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-size: 14px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    font-synthesis: none;
   }
 }
 
-@utility font-display {
-  font-family: 'Fraunces Variable', 'Fraunces', Georgia, serif;
+@utility focus-ring {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-50;
 }
 
-@utility focus-ring {
-  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-50 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-400;
+@utility btn-primary {
+  @apply inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-stone-900 px-3 text-sm font-semibold whitespace-nowrap text-white shadow-sm transition-colors ease-out hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-50;
+}
+
+@utility btn-secondary {
+  @apply inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 text-sm font-semibold whitespace-nowrap text-stone-900 shadow-sm transition-colors ease-out hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-50;
+}
+
+@utility btn-danger {
+  @apply inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 text-sm font-semibold whitespace-nowrap text-red-700 shadow-sm transition-colors ease-out hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-50;
+}
+
+@utility btn-icon {
+  @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-900 shadow-sm transition-colors ease-out hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-50;
+}
+
+@utility input-field {
+  @apply h-9 w-full rounded-lg border border-stone-200 bg-white px-3 text-sm text-stone-900 transition-colors ease-out placeholder:text-stone-400 hover:border-stone-300 focus-visible:border-stone-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-50;
+}
+
+@utility card {
+  @apply rounded-xl border border-stone-200 bg-white p-4 shadow-sm;
+}
+
+@utility label-tiny {
+  @apply text-xs font-semibold uppercase tracking-wide text-stone-500;
 }

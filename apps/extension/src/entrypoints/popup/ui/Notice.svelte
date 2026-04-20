@@ -14,7 +14,7 @@
 </script>
 
 <div
-  class={['flex items-start gap-2 rounded-lg border px-3 py-2 text-sm', tones[kind]]}
+  class={['flex items-start gap-2 rounded-lg border p-3 text-sm', tones[kind]]}
   role={kind === 'error' ? 'alert' : 'status'}
 >
   <span class="inline-flex shrink-0 pt-0.5" aria-hidden="true">
@@ -36,11 +36,11 @@
     {/if}
   </span>
 
-  <span class="min-w-0 flex-1 wrap-break-word text-stone-900">{message}</span>
+  <span class="min-w-0 flex-1 wrap-break-word leading-5 text-stone-900">{message}</span>
 
   {#if onDismiss}
     <button
-      class="inline-flex items-center justify-center rounded-md p-1 text-current opacity-70 transition-opacity ease-out hover:bg-current/10 hover:opacity-100 focus-ring"
+      class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-current opacity-70 transition-opacity ease-out hover:bg-current/10 hover:opacity-100 focus-ring"
       type="button"
       aria-label="Dismiss"
       onclickcapture={onDismiss}

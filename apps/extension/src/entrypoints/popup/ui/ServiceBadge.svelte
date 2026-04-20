@@ -19,8 +19,8 @@
 
 <span
   class={[
-    "inline-flex shrink-0 items-center justify-center leading-none font-bold font-display [font-variation-settings:'SOFT'_100,'opsz'_60]",
-    size === 'sm' ? 'h-5 w-5 rounded-md text-xs' : 'h-8 w-8 rounded-lg text-lg',
+    'inline-flex shrink-0 items-center justify-center rounded-lg leading-none font-bold',
+    size === 'sm' ? 'h-6 w-6 text-xs' : 'h-9 w-9 text-lg',
   ]}
   style:background={descriptor.accent}
   style:color={descriptor.accentContrast}
