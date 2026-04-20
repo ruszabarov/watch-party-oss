@@ -14,10 +14,10 @@ export default defineContentScript({
           payload: context,
         });
       },
-      (command) => {
+      (update) => {
         void browser.runtime.sendMessage({
-          type: 'content:playback-command',
-          payload: command,
+          type: 'content:playback-update',
+          payload: update,
         });
       },
     );

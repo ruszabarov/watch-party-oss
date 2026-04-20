@@ -1,13 +1,13 @@
 import type {
   ConnectionStatus,
   PartySnapshot,
-  PlaybackCommand,
+  PlaybackUpdate,
   ServiceId,
 } from '@watch-party/shared';
 
 export const DEFAULT_SERVER_URL = 'http://localhost:8787';
 export const SYNC_DRIFT_THRESHOLD_SEC = 1.5;
-export const LOCAL_COMMAND_SUPPRESSION_MS = 1_000;
+export const LOCAL_UPDATE_SUPPRESSION_MS = 1_000;
 
 export interface ActiveTabSummary {
   tabId: number | null;
@@ -53,11 +53,11 @@ export type RuntimeRequest =
   | { type: 'room:create' }
   | { type: 'room:join'; payload: { roomCode: string } }
   | { type: 'room:leave' }
-  | { type: 'room:playback-command'; payload: PlaybackCommand };
+  | { type: 'room:playback-update'; payload: PlaybackUpdate };
 
 export type ContentMessage =
   | { type: 'content:context'; payload: ServiceContentContext }
-  | { type: 'content:playback-command'; payload: PlaybackCommand }
+  | { type: 'content:playback-update'; payload: PlaybackUpdate }
   | { type: 'content:request-sync' };
 
 export type BackgroundToContentMessage =

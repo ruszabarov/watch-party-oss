@@ -3,7 +3,7 @@
 
   import type { PopupState } from '../../lib/protocol/extension';
   import { DEFAULT_SERVER_URL } from '../../lib/protocol/extension';
-  import type { PlaybackCommand } from '@watch-party/shared';
+  import type { PlaybackUpdate } from '@watch-party/shared';
 
   const emptyState: PopupState = {
     settings: {
@@ -79,27 +79,26 @@
     }
   };
 
-  const issuePlaybackCommand = async (
-    kind: PlaybackCommand['kind'],
-    deltaSec = 0,
-  ): Promise<void> => {
+  const issuePlaybackUpdate = async (overrides: {
+    playing?: boolean;
+    positionDeltaSec?: number;
+  }): Promise<void> => {
     if (!state.contentContext?.mediaId) {
       return;
     }
 
-    const targetPosition = Math.max(0, positionSec + deltaSec);
+    const payload: PlaybackUpdate = {
+      serviceId: 'netflix',
+      mediaId: state.contentContext.mediaId,
+      title: state.contentContext.mediaTitle,
+      positionSec: Math.max(0, positionSec + (overrides.positionDeltaSec ?? 0)),
+      playing: overrides.playing ?? state.room?.playback?.playing ?? false,
+      issuedAt: Date.now(),
+    };
 
     await perform({
-      type: 'room:playback-command',
-      payload: {
-        kind,
-        serviceId: 'netflix',
-        mediaId: state.contentContext.mediaId,
-        title: state.contentContext.mediaTitle,
-        positionSec: kind === 'seek' ? targetPosition : positionSec,
-        playing: kind === 'play' ? true : kind === 'pause' ? false : state.room?.playback?.playing ?? false,
-        issuedAt: Date.now(),
-      },
+      type: 'room:playback-update',
+      payload,
     });
   };
 
@@ -187,10 +186,10 @@
           <p class="meta">{positionSec.toFixed(1)}s · {state.room.playback?.playing ? 'Playing' : 'Paused'}</p>
         </div>
         <div class="controls">
-          <button onclick={() => issuePlaybackCommand('seek', -10)} disabled={isBusy}>-10</button>
-          <button onclick={() => issuePlaybackCommand('play')} disabled={isBusy}>Play</button>
-          <button onclick={() => issuePlaybackCommand('pause')} disabled={isBusy}>Pause</button>
-          <button onclick={() => issuePlaybackCommand('seek', 10)} disabled={isBusy}>+10</button>
+          <button onclick={() => issuePlaybackUpdate({ positionDeltaSec: -10 })} disabled={isBusy}>-10</button>
+          <button onclick={() => issuePlaybackUpdate({ playing: true })} disabled={isBusy}>Play</button>
+          <button onclick={() => issuePlaybackUpdate({ playing: false })} disabled={isBusy}>Pause</button>
+          <button onclick={() => issuePlaybackUpdate({ positionDeltaSec: 10 })} disabled={isBusy}>+10</button>
         </div>
       </div>
 

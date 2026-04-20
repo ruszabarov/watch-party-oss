@@ -2,8 +2,8 @@ import type {
   CreateRoomRequest,
   PartyMember,
   PartySnapshot,
-  PlaybackCommand,
   PlaybackState,
+  PlaybackUpdate,
   ServiceId,
 } from './protocol';
 
@@ -47,14 +47,19 @@ export function createRoomState(
     };
   }
 
-  return {
+  const room: RoomState = {
     roomCode,
     serviceId: request.serviceId,
     members: new Map<string, PartyMember>(),
-    playback,
     sequence,
     createdAt: now,
   };
+
+  if (playback) {
+    room.playback = playback;
+  }
+
+  return room;
 }
 
 export function upsertRoomMember(
@@ -82,25 +87,29 @@ export function roomHasMember(room: RoomState, memberId: string): boolean {
   return room.members.has(memberId);
 }
 
-export function applyPlaybackCommand(
+export function applyPlaybackUpdate(
   room: RoomState,
-  command: PlaybackCommand,
+  update: PlaybackUpdate,
   memberId: string,
   now = Date.now(),
 ): PlaybackState {
   room.sequence += 1;
-  room.playback = {
-    serviceId: command.serviceId,
-    mediaId: command.mediaId,
-    title: command.title,
-    playing: command.playing,
-    positionSec: normalizePosition(command.positionSec),
+  const playback: PlaybackState = {
+    serviceId: update.serviceId,
+    mediaId: update.mediaId,
+    playing: update.playing,
+    positionSec: normalizePosition(update.positionSec),
     updatedAt: now,
     sourceMemberId: memberId,
     sequence: room.sequence,
   };
 
-  return room.playback;
+  if (update.title !== undefined) {
+    playback.title = update.title;
+  }
+
+  room.playback = playback;
+  return playback;
 }
 
 export function resolvePlaybackState(
@@ -126,16 +135,22 @@ export function toPartySnapshot(
   room: RoomState,
   now = Date.now(),
 ): PartySnapshot {
-  return {
+  const snapshot: PartySnapshot = {
     roomCode: room.roomCode,
     serviceId: room.serviceId,
     members: [...room.members.values()].sort((left, right) => {
       return left.joinedAt - right.joinedAt;
     }),
-    playback: resolvePlaybackState(room.playback, now),
     sequence: room.sequence,
     createdAt: room.createdAt,
   };
+
+  const playback = resolvePlaybackState(room.playback, now);
+  if (playback) {
+    snapshot.playback = playback;
+  }
+
+  return snapshot;
 }
 
 function normalizePosition(value: number): number {

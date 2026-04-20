@@ -3,7 +3,7 @@ import http from 'node:http';
 import { Server } from 'socket.io';
 
 import {
-  applyPlaybackCommand,
+  applyPlaybackUpdate,
   createRoomCode,
   createRoomState,
   roomHasMember,
@@ -21,7 +21,7 @@ type SessionRecord = {
   memberId: string;
 };
 
-const port = Number.parseInt(process.env.PORT ?? '8787', 10);
+const port = Number.parseInt(process.env['PORT'] ?? '8787', 10);
 const rooms = new Map<string, RoomState>();
 const sessionsBySocket = new Map<string, SessionRecord>();
 const activeSocketByMember = new Map<string, string>();
@@ -93,7 +93,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('playback:command', (payload, acknowledge) => {
+  socket.on('playback:update', (payload, acknowledge) => {
     const room = rooms.get(payload.roomCode.trim().toUpperCase());
 
     if (!room) {
@@ -106,12 +106,12 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (payload.command.serviceId !== room.serviceId) {
+    if (payload.update.serviceId !== room.serviceId) {
       acknowledge({ ok: false, error: 'Service mismatch.' });
       return;
     }
 
-    applyPlaybackCommand(room, payload.command, payload.memberId);
+    applyPlaybackUpdate(room, payload.update, payload.memberId);
     const snapshot = toPartySnapshot(room);
 
     acknowledge({ ok: true, data: snapshot });

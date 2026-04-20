@@ -4,7 +4,7 @@ import {
   type ClientToServerEvents,
   resolvePlaybackState,
   type PartySnapshot,
-  type PlaybackCommand,
+  type PlaybackUpdate,
   type RoomResponse,
   type ServerToClientEvents,
 } from '@watch-party/shared';
@@ -137,8 +137,8 @@ async function handleMessage(
       return joinRoom(message.payload.roomCode);
     case 'room:leave':
       return leaveRoom();
-    case 'room:playback-command':
-      return sendPlaybackCommand(message.payload);
+    case 'room:playback-update':
+      return sendPlaybackUpdate(message.payload);
     case 'content:context':
       if (sender.tab?.id != null) {
         contentContexts.set(sender.tab.id, message.payload);
@@ -154,12 +154,12 @@ async function handleMessage(
 
       emitStateChanged();
       return { ok: true };
-    case 'content:playback-command':
+    case 'content:playback-update':
       if (sender.tab?.id !== state.controlledTabId) {
         return { ok: false };
       }
 
-      return sendPlaybackCommand(message.payload, true);
+      return sendPlaybackUpdate(message.payload, true);
     case 'content:request-sync':
       if (sender.tab?.id != null && state.room) {
         state.controlledTabId ??= sender.tab.id;
@@ -335,8 +335,8 @@ async function leaveRoom(): Promise<PopupState> {
   return buildPopupState();
 }
 
-async function sendPlaybackCommand(
-  command: PlaybackCommand,
+async function sendPlaybackUpdate(
+  update: PlaybackUpdate,
   isLocalRelay = false,
 ): Promise<PopupState | { ok: false }> {
   if (!state.session) {
@@ -347,16 +347,16 @@ async function sendPlaybackCommand(
   }
 
   const playbackContext = contentContexts.get(state.controlledTabId ?? -1);
-  if (playbackContext?.mediaId && playbackContext.mediaId !== command.mediaId) {
+  if (playbackContext?.mediaId && playbackContext.mediaId !== update.mediaId) {
     state.lastWarning = 'Local title no longer matches the active room.';
     emitStateChanged();
     return buildPopupState();
   }
 
-  await emitWithAck<PartySnapshot>('playback:command', {
+  await emitWithAck<PartySnapshot>('playback:update', {
     roomCode: state.session.roomCode,
     memberId: state.session.memberId,
-    command,
+    update,
   });
 
   if (!isLocalRelay) {

@@ -1,6 +1,6 @@
 import type {
   PartySnapshot,
-  PlaybackCommand,
+  PlaybackUpdate,
   ServiceId,
 } from '@watch-party/shared';
 
@@ -15,6 +15,6 @@ export interface StreamingServiceAdapter {
   applySnapshot(snapshot: PartySnapshot): Promise<ApplySnapshotResult>;
   observe(
     onContext: (context: ServiceContentContext) => void,
-    onPlaybackCommand: (command: PlaybackCommand) => void,
+    onPlaybackUpdate: (update: PlaybackUpdate) => void,
   ): () => void;
 }

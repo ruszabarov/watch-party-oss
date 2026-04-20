@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  applyPlaybackCommand,
+  applyPlaybackUpdate,
   createRoomState,
   resolvePlaybackState,
   toPartySnapshot,
@@ -9,7 +9,7 @@ import {
 } from './index';
 
 describe('room reducer', () => {
-  it('orders commands by server receive sequence', () => {
+  it('orders playback updates by server receive sequence', () => {
     const room = createRoomState(
       'ROOM01',
       {
@@ -23,10 +23,9 @@ describe('room reducer', () => {
     upsertRoomMember(room, 'member-a', 'Member A', 1_000);
     upsertRoomMember(room, 'member-b', 'Member B', 1_000);
 
-    applyPlaybackCommand(
+    applyPlaybackUpdate(
       room,
       {
-        kind: 'play',
         serviceId: 'netflix',
         mediaId: '123',
         positionSec: 10,
@@ -37,10 +36,9 @@ describe('room reducer', () => {
       1_500,
     );
 
-    applyPlaybackCommand(
+    applyPlaybackUpdate(
       room,
       {
-        kind: 'pause',
         serviceId: 'netflix',
         mediaId: '123',
         positionSec: 12,
@@ -70,10 +68,9 @@ describe('room reducer', () => {
 
     upsertRoomMember(room, 'member-a', 'Member A', 1_000);
 
-    applyPlaybackCommand(
+    applyPlaybackUpdate(
       room,
       {
-        kind: 'play',
         serviceId: 'netflix',
         mediaId: '456',
         positionSec: 25,

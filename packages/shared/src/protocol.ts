@@ -8,8 +8,6 @@ export type ConnectionStatus =
   | 'reconnecting'
   | 'error';
 
-export type PlaybackCommandKind = 'play' | 'pause' | 'seek';
-
 export interface PartyMember {
   id: string;
   name: string;
@@ -27,8 +25,7 @@ export interface PlaybackState {
   sequence: number;
 }
 
-export interface PlaybackCommand {
-  kind: PlaybackCommandKind;
+export interface PlaybackUpdate {
   serviceId: ServiceId;
   mediaId: string;
   title?: string;
@@ -88,10 +85,10 @@ export interface LeaveRoomRequest {
   memberId: string;
 }
 
-export interface PlaybackCommandRequest {
+export interface PlaybackUpdateRequest {
   roomCode: string;
   memberId: string;
-  command: PlaybackCommand;
+  update: PlaybackUpdate;
 }
 
 export interface PingRequest {
@@ -117,8 +114,8 @@ export interface ClientToServerEvents {
     payload: LeaveRoomRequest,
     acknowledge: Acknowledge<{ roomCode: string }>,
   ) => void;
-  'playback:command': (
-    payload: PlaybackCommandRequest,
+  'playback:update': (
+    payload: PlaybackUpdateRequest,
     acknowledge: Acknowledge<PartySnapshot>,
   ) => void;
   'presence:update': (payload: PresenceUpdate) => void;

@@ -1,7 +1,7 @@
-import type { PartySnapshot, PlaybackCommand } from '@watch-party/shared';
+import type { PartySnapshot, PlaybackUpdate } from '@watch-party/shared';
 
 import {
-  LOCAL_COMMAND_SUPPRESSION_MS,
+  LOCAL_UPDATE_SUPPRESSION_MS,
   SYNC_DRIFT_THRESHOLD_SEC,
   type ApplySnapshotResult,
   type ServiceContentContext,
@@ -15,33 +15,33 @@ export function createNetflixAdapter(): StreamingServiceAdapter {
   let suppressLocalCommandsUntil = 0;
   let lastContextSignature = '';
   let notifyContext: ((context: ServiceContentContext) => void) | null = null;
-  let notifyPlaybackCommand: ((command: PlaybackCommand) => void) | null = null;
+  let notifyPlaybackUpdate: ((update: PlaybackUpdate) => void) | null = null;
 
   const onPlay = (): void => {
-    if (!notifyContext || !notifyPlaybackCommand) {
+    if (!notifyContext || !notifyPlaybackUpdate) {
       return;
     }
 
     emitContextIfChanged(notifyContext);
-    emitPlaybackCommand(notifyPlaybackCommand, 'play');
+    emitPlaybackUpdate(notifyPlaybackUpdate);
   };
 
   const onPause = (): void => {
-    if (!notifyContext || !notifyPlaybackCommand) {
+    if (!notifyContext || !notifyPlaybackUpdate) {
       return;
     }
 
     emitContextIfChanged(notifyContext);
-    emitPlaybackCommand(notifyPlaybackCommand, 'pause');
+    emitPlaybackUpdate(notifyPlaybackUpdate);
   };
 
   const onSeeked = (): void => {
-    if (!notifyContext || !notifyPlaybackCommand) {
+    if (!notifyContext || !notifyPlaybackUpdate) {
       return;
     }
 
     emitContextIfChanged(notifyContext);
-    emitPlaybackCommand(notifyPlaybackCommand, 'seek');
+    emitPlaybackUpdate(notifyPlaybackUpdate);
   };
 
   const getVideo = (): HTMLVideoElement | null => {
@@ -92,9 +92,8 @@ export function createNetflixAdapter(): StreamingServiceAdapter {
     onContext(context);
   };
 
-  const emitPlaybackCommand = (
-    onPlaybackCommand: (command: PlaybackCommand) => void,
-    kind: PlaybackCommand['kind'],
+  const emitPlaybackUpdate = (
+    onPlaybackUpdate: (update: PlaybackUpdate) => void,
   ): void => {
     if (Date.now() < suppressLocalCommandsUntil) {
       return;
@@ -105,22 +104,20 @@ export function createNetflixAdapter(): StreamingServiceAdapter {
       return;
     }
 
-    const command: PlaybackCommand = {
-      kind,
+    onPlaybackUpdate({
       serviceId: 'netflix',
       mediaId: context.mediaId,
       title: context.mediaTitle,
       positionSec: context.positionSec,
       playing: context.playing,
       issuedAt: Date.now(),
-    };
-    onPlaybackCommand(command);
+    });
   };
 
   const bindVideoEvents = (
     video: HTMLVideoElement,
     onContext: (context: ServiceContentContext) => void,
-    onPlaybackCommand: (command: PlaybackCommand) => void,
+    onPlaybackUpdate: (update: PlaybackUpdate) => void,
   ): void => {
     if (activeVideo === video) {
       return;
@@ -139,15 +136,15 @@ export function createNetflixAdapter(): StreamingServiceAdapter {
 
   const observe = (
     onContext: (context: ServiceContentContext) => void,
-    onPlaybackCommand: (command: PlaybackCommand) => void,
+    onPlaybackUpdate: (update: PlaybackUpdate) => void,
   ): (() => void) => {
     notifyContext = onContext;
-    notifyPlaybackCommand = onPlaybackCommand;
+    notifyPlaybackUpdate = onPlaybackUpdate;
 
     const mutationObserver = new MutationObserver(() => {
       const video = getVideo();
       if (video) {
-        bindVideoEvents(video, onContext, onPlaybackCommand);
+        bindVideoEvents(video, onContext, onPlaybackUpdate);
       } else {
         activeVideo?.removeEventListener('play', onPlay);
         activeVideo?.removeEventListener('pause', onPause);
@@ -166,7 +163,7 @@ export function createNetflixAdapter(): StreamingServiceAdapter {
     const intervalId = window.setInterval(() => {
       const video = getVideo();
       if (video) {
-        bindVideoEvents(video, onContext, onPlaybackCommand);
+        bindVideoEvents(video, onContext, onPlaybackUpdate);
       }
 
       emitContextIfChanged(onContext);
@@ -174,7 +171,7 @@ export function createNetflixAdapter(): StreamingServiceAdapter {
 
     const firstVideo = getVideo();
     if (firstVideo) {
-      bindVideoEvents(firstVideo, onContext, onPlaybackCommand);
+      bindVideoEvents(firstVideo, onContext, onPlaybackUpdate);
     }
     emitContextIfChanged(onContext);
 
@@ -186,7 +183,7 @@ export function createNetflixAdapter(): StreamingServiceAdapter {
       activeVideo?.removeEventListener('seeked', onSeeked);
       activeVideo = null;
       notifyContext = null;
-      notifyPlaybackCommand = null;
+      notifyPlaybackUpdate = null;
     };
   };
 
@@ -212,7 +209,7 @@ export function createNetflixAdapter(): StreamingServiceAdapter {
       };
     }
 
-    suppressLocalCommandsUntil = Date.now() + LOCAL_COMMAND_SUPPRESSION_MS;
+    suppressLocalCommandsUntil = Date.now() + LOCAL_UPDATE_SUPPRESSION_MS;
 
     const elapsedSec = snapshot.playback.playing
       ? Math.max(0, (Date.now() - snapshot.playback.updatedAt) / 1000)
