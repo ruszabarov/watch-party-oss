@@ -18,15 +18,10 @@
 </script>
 
 <span
-  class:h-5={size === 'sm'}
-  class:w-5={size === 'sm'}
-  class:rounded-md={size === 'sm'}
-  class:text-xs={size === 'sm'}
-  class:h-8={size === 'md'}
-  class:w-8={size === 'md'}
-  class:rounded-lg={size === 'md'}
-  class:text-lg={size === 'md'}
-  class="inline-flex shrink-0 items-center justify-center leading-none font-bold [font-family:var(--font-display)] [font-variation-settings:'SOFT'_100,'opsz'_60]"
+  class={[
+    "inline-flex shrink-0 items-center justify-center leading-none font-bold font-display [font-variation-settings:'SOFT'_100,'opsz'_60]",
+    size === 'sm' ? 'h-5 w-5 rounded-md text-xs' : 'h-8 w-8 rounded-lg text-lg',
+  ]}
   style:background={descriptor.accent}
   style:color={descriptor.accentContrast}
   aria-label={descriptor.label}

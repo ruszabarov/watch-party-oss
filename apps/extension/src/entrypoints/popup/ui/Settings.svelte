@@ -30,37 +30,40 @@
     event.preventDefault();
     onSave({ memberName, serverUrl });
   }
+
+  const inputClass =
+    'h-9 w-full rounded-lg border border-stone-200 bg-white px-3 text-stone-900 transition-colors ease-out placeholder:text-stone-400 hover:border-stone-300 focus-visible:border-stone-300 focus-ring';
 </script>
 
-<form class="flex min-h-full flex-col gap-3" onsubmitcapture={handleSave}>
+<form class="flex flex-col gap-3" onsubmitcapture={handleSave}>
   <label class="flex flex-col gap-2">
-    <span class="text-sm font-semibold text-[var(--text-muted)]">Display name</span>
+    <span class="text-sm font-semibold text-stone-500">Display name</span>
     <input
       type="text"
       maxlength="32"
       placeholder="Guest"
-      class="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[var(--text)] transition-colors duration-150 ease-[var(--ease)] placeholder:text-[var(--text-subtle)] hover:border-[var(--border-strong)] focus-visible:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--surface-0)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ring)]"
+      class={inputClass}
       bind:value={memberName}
     />
   </label>
 
   {#if SHOW_SERVER_SETTINGS}
     <label class="flex flex-col gap-2">
-      <span class="text-sm font-semibold text-[var(--text-muted)]">Server URL</span>
+      <span class="text-sm font-semibold text-stone-500">Server URL</span>
       <input
         type="url"
         placeholder={DEFAULT_SERVER_URL}
-        class="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[var(--text)] transition-colors duration-150 ease-[var(--ease)] placeholder:text-[var(--text-subtle)] hover:border-[var(--border-strong)] focus-visible:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--surface-0)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ring)]"
+        class={inputClass}
         bind:value={serverUrl}
       />
-      <span class="text-xs leading-5 text-[var(--text-subtle)]">
+      <span class="text-xs leading-5 text-stone-400">
         Point the extension at a self-hosted backend.
       </span>
     </label>
   {/if}
 
   <button
-    class="mt-auto inline-flex h-10 items-center justify-center rounded-lg border border-stone-900 bg-stone-900 px-4 text-base font-bold text-white shadow-sm transition-colors duration-150 ease-[var(--ease)] hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+    class="inline-flex h-10 items-center justify-center rounded-lg border border-stone-900 bg-stone-900 px-4 text-base font-bold text-white shadow-sm transition-colors ease-out hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-45 focus-ring"
     type="submit"
     disabled={isBusy || !dirty}
   >

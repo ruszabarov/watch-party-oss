@@ -6,16 +6,15 @@
   }
 
   const { kind, message, onDismiss }: Props = $props();
+
+  const tones = {
+    error: 'border-red-200 bg-red-50 text-red-700',
+    warning: 'border-amber-200 bg-amber-50 text-amber-700',
+  } as const;
 </script>
 
 <div
-  class:border-[var(--danger-border)]={kind === 'error'}
-  class:bg-[var(--danger-bg)]={kind === 'error'}
-  class:text-[var(--danger)]={kind === 'error'}
-  class:border-[var(--warning-border)]={kind === 'warning'}
-  class:bg-[var(--warning-bg)]={kind === 'warning'}
-  class:text-[var(--warning)]={kind === 'warning'}
-  class="flex items-start gap-2 rounded-lg border px-3 py-2 text-sm"
+  class={['flex items-start gap-2 rounded-lg border px-3 py-2 text-sm', tones[kind]]}
   role={kind === 'error' ? 'alert' : 'status'}
 >
   <span class="inline-flex shrink-0 pt-0.5" aria-hidden="true">
@@ -37,11 +36,11 @@
     {/if}
   </span>
 
-  <span class="min-w-0 flex-1 break-words text-[var(--text)]">{message}</span>
+  <span class="min-w-0 flex-1 wrap-break-word text-stone-900">{message}</span>
 
   {#if onDismiss}
     <button
-      class="inline-flex items-center justify-center rounded-md border-none bg-transparent p-1 text-current opacity-70 transition-opacity duration-150 ease-[var(--ease)] hover:bg-[color-mix(in_srgb,currentColor_12%,transparent)] hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--surface-0)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ring)]"
+      class="inline-flex items-center justify-center rounded-md p-1 text-current opacity-70 transition-opacity ease-out hover:bg-current/10 hover:opacity-100 focus-ring"
       type="button"
       aria-label="Dismiss"
       onclickcapture={onDismiss}

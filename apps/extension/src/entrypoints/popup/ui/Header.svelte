@@ -13,14 +13,14 @@
   const settingsCopy = $derived(settingsOpen ? 'Lobby' : 'Settings');
 </script>
 
-<header class="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-0)] px-4 py-3">
+<header class="flex items-center justify-between border-b border-stone-200 bg-stone-50 px-4 py-3">
   <div class="font-semibold">
     <span class="text-sm">Watch Party</span>
   </div>
 
   <div class="flex shrink-0 items-center gap-2">
     <button
-      class="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 text-sm font-semibold text-[var(--text)] shadow-sm transition-colors duration-150 ease-[var(--ease)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--surface-0)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ring)]"
+      class="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-stone-200 bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm transition-colors ease-out hover:border-stone-300 hover:bg-stone-200 focus-ring"
       type="button"
       aria-label={settingsLabel}
       aria-pressed={settingsOpen}

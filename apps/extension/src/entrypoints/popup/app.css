@@ -2,126 +2,22 @@
 @import '@fontsource-variable/fraunces';
 @import 'tailwindcss';
 
-:root {
-  color-scheme: light;
-
-  --font-sans: 'Manrope Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-display: 'Fraunces Variable', 'Fraunces', Georgia, serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
-
-  --surface-0: #fafaf9;
-  --surface-1: #ffffff;
-  --surface-2: #f5f5f4;
-  --surface-hover: #f4f4f3;
-
-  --border: rgba(12, 10, 9, 0.08);
-  --border-strong: rgba(12, 10, 9, 0.14);
-  --ring: rgba(12, 10, 9, 0.18);
-
-  --text: #1c1917;
-  --text-muted: #78716c;
-  --text-subtle: #a8a29e;
-
-  --primary: #0c0a09;
-  --primary-contrast: #fafaf9;
-  --primary-hover: #1c1917;
-
-  --accent: #ef4444;
-  --accent-contrast: #ffffff;
-
-  --success: #16a34a;
-  --warning: #b45309;
-  --warning-bg: #fffbeb;
-  --warning-border: #fde68a;
-  --danger: #b91c1c;
-  --danger-bg: #fef2f2;
-  --danger-border: #fecaca;
-
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
-
-  --shadow-sm: 0 1px 2px rgba(12, 10, 9, 0.04);
-  --shadow-md: 0 4px 14px rgba(12, 10, 9, 0.08);
-
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-
-  font-family: var(--font-sans);
-  font-size: 14px;
-  color: var(--text);
-  background: var(--surface-0);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  font-synthesis: none;
+@layer base {
+  body {
+    width: 360px;
+    font-family: 'Manrope Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-synthesis: none;
+  }
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+@utility font-display {
+  font-family: 'Fraunces Variable', 'Fraunces', Georgia, serif;
 }
 
-html,
-body {
-  margin: 0;
-  background: var(--surface-0);
-  color: var(--text);
-}
-
-body {
-  width: 360px;
-  min-height: 440px;
-  font-family: var(--font-sans);
-  font-size: 14px;
-}
-
-#app {
-  min-height: 100%;
-}
-
-button,
-input,
-textarea,
-select {
-  font: inherit;
-  color: inherit;
-}
-
-.shell {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-.shell__main {
-  flex: 1;
-  padding: 14px 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.stack-sm {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.row-between {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.card {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+@utility focus-ring {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-50 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-400;
 }

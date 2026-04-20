@@ -120,16 +120,16 @@
   });
 </script>
 
-<div class="flex min-h-full flex-col overflow-hidden bg-[var(--surface-0)] text-[var(--text)]">
+<div class="flex flex-col overflow-hidden bg-stone-50 text-stone-900">
   <Header
     status={popup.connectionStatus}
     settingsOpen={settingsOpen}
     onToggleSettings={toggleSettings}
   />
 
-  <main class="flex-1 p-3">
+  <main class="p-3">
     {#if settingsOpen}
-      <div class="flex min-h-full flex-col gap-3">
+      <div class="flex flex-col gap-3">
         <Settings
           settings={popup.settings}
           {isBusy}
@@ -137,7 +137,7 @@
         />
       </div>
     {:else}
-      <div class="flex min-h-full flex-col gap-3">
+      <div class="flex flex-col gap-3">
         {#if popup.room}
           <Room
             popup={popup}

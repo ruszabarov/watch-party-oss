@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { PopupState } from '../../../lib/protocol/extension';
+  import type { PopupState } from "../../../lib/protocol/extension";
   import {
     SUPPORTED_SERVICE_DESCRIPTORS,
     getServiceDescriptor,
-  } from '../../../lib/services/registry';
-  import ServiceBadge from './ServiceBadge.svelte';
+  } from "../../../lib/services/registry";
+  import ServiceBadge from "./ServiceBadge.svelte";
 
   interface Props {
     popup: PopupState;
@@ -15,7 +15,7 @@
 
   const { popup, isBusy, onCreateRoom, onJoinRoom }: Props = $props();
 
-  let joinCode = $state('');
+  let joinCode = $state("");
 
   const activeDescriptor = $derived(
     getServiceDescriptor(popup.contentContext?.serviceId),
@@ -28,23 +28,23 @@
       return (
         popup.contentContext?.mediaTitle ??
         activeDescriptor?.label ??
-        'Ready to start'
+        "Ready to start"
       );
     }
-    return 'Open a supported video page';
+    return "Open a supported video page";
   });
 
   const hint = $derived.by(() => {
     if (isReady) {
       return activeDescriptor
         ? `Watching on ${activeDescriptor.label}. Invite friends with a code.`
-        : 'Create a room or join one with a code.';
+        : "Create a room or join one with a code.";
     }
     return (
       popup.contentContext?.issue ??
-      `Start a playback page to begin — try ${
-        SUPPORTED_SERVICE_DESCRIPTORS.map((d) => d.watchPathHint).join(', ')
-      }.`
+      `Start a playback page to begin — try ${SUPPORTED_SERVICE_DESCRIPTORS.map(
+        (d) => d.watchPathHint,
+      ).join(", ")}.`
     );
   });
 
@@ -58,7 +58,7 @@
   }
 
   function handleCodeKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Enter') {
+    if (event.key === "Enter") {
       event.preventDefault();
       handleJoin();
     }
@@ -72,12 +72,12 @@
       <p class="m-0 text-sm font-semibold leading-5">
         {title}
       </p>
-      <p class="m-0 text-sm leading-5 text-[var(--text-muted)]">{hint}</p>
+      <p class="m-0 text-sm leading-5 text-stone-500">{hint}</p>
     </div>
   </div>
 
   <button
-    class="inline-flex h-10 items-center justify-center rounded-lg border border-stone-900 bg-stone-900 px-4 text-base font-bold text-white shadow-sm transition-colors duration-150 ease-[var(--ease)] hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+    class="inline-flex h-10 items-center justify-center rounded-lg border border-stone-900 bg-stone-900 px-4 text-base font-bold text-white shadow-sm transition-colors ease-out hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-45 focus-ring"
     type="button"
     onclickcapture={onCreateRoom}
     disabled={!canAct}
@@ -85,14 +85,17 @@
     Create room
   </button>
 
-  <div class="h-px bg-[var(--border)]" role="separator" aria-hidden="true"></div>
+  <div class="h-px bg-stone-200" role="separator" aria-hidden="true"></div>
 
   <form
     class="flex flex-col gap-2"
-    onsubmitcapture={(e) => { e.preventDefault(); handleJoin(); }}
+    onsubmitcapture={(e) => {
+      e.preventDefault();
+      handleJoin();
+    }}
   >
     <label
-      class="text-xs font-semibold uppercase tracking-wide text-[var(--text-subtle)]"
+      class="text-xs font-semibold uppercase tracking-wide text-stone-400"
       for="join-code"
     >
       Have a code?
@@ -105,12 +108,12 @@
         autocomplete="off"
         spellcheck="false"
         placeholder="ABC123"
-        class="h-9 w-full flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-3 font-semibold uppercase tracking-widest text-[var(--text)] [font-family:var(--font-mono)] transition-colors duration-150 ease-[var(--ease)] placeholder:text-[var(--text-subtle)] hover:border-[var(--border-strong)] focus-visible:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--surface-0)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ring)]"
+        class="h-9 w-full flex-1 rounded-lg border border-stone-200 bg-white px-3 font-semibold uppercase tracking-widest text-stone-900 font-mono transition-colors ease-out placeholder:text-stone-400 hover:border-stone-300 focus-visible:border-stone-300 focus-ring"
         bind:value={joinCode}
         onkeydowncapture={handleCodeKeydown}
       />
       <button
-        class="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 text-sm font-semibold whitespace-nowrap text-[var(--text)] shadow-sm transition-colors duration-150 ease-[var(--ease)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--surface-0)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ring)]"
+        class="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-stone-300 bg-stone-100 px-3 text-sm font-semibold whitespace-nowrap text-stone-900 shadow-sm transition-colors ease-out hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-45 focus-ring"
         type="submit"
         disabled={!canAct || !trimmedCode}
       >

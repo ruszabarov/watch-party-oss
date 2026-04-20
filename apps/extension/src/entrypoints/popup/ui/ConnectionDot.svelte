@@ -16,16 +16,16 @@
   };
 
   const toneClasses: Record<ConnectionStatus, string> = {
-    disconnected: 'bg-[var(--text-subtle)] text-[var(--text-subtle)]',
-    connecting: 'animate-pulse bg-[var(--warning)] text-[var(--warning)]',
-    connected: 'bg-[var(--success)] text-[var(--success)]',
-    reconnecting: 'animate-pulse bg-[var(--warning)] text-[var(--warning)]',
-    error: 'bg-[var(--danger)] text-[var(--danger)]',
+    disconnected: 'bg-stone-400 text-stone-400',
+    connecting: 'animate-pulse bg-amber-700 text-amber-700',
+    connected: 'bg-green-600 text-green-600',
+    reconnecting: 'animate-pulse bg-amber-700 text-amber-700',
+    error: 'bg-red-700 text-red-700',
   };
 </script>
 
 <span
-  class={`inline-block h-2 w-2 rounded-full shadow-[0_0_0_3px_color-mix(in_srgb,currentColor_12%,transparent)] transition-colors duration-150 ease-[var(--ease)] ${toneClasses[status]}`}
+  class={`inline-block h-2 w-2 rounded-full ring-2 ring-current/10 transition-colors ease-out ${toneClasses[status]}`}
   title={labels[status]}
   aria-label={labels[status]}
 ></span>
