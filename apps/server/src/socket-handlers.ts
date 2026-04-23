@@ -24,6 +24,11 @@ import {
   upsertRoomMember,
 } from '@watch-party/shared';
 
+import {
+  createTokenBucketRateLimiter,
+  type TokenBucketRateLimiter,
+} from './token-bucket-rate-limiter';
+
 type ConnectionSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents>;
 
@@ -37,15 +42,23 @@ export type RealtimeState = {
   rooms: Map<string, RoomState>;
   sessionsBySocket: Map<string, SessionRecord>;
   activeSocketByMember: Map<string, string>;
+  playbackUpdateRateLimiter: TokenBucketRateLimiter;
 };
 
 const INVALID_PAYLOAD_ERROR = 'Invalid request payload.';
+const PLAYBACK_UPDATE_RATE_LIMIT_ERROR = 'Playback update rate limit exceeded.';
+const PLAYBACK_UPDATE_TOKENS_PER_SECOND = 10;
+const PLAYBACK_UPDATE_BURST_CAPACITY = 20;
 
 export function createRealtimeState(): RealtimeState {
   return {
     rooms: new Map<string, RoomState>(),
     sessionsBySocket: new Map<string, SessionRecord>(),
     activeSocketByMember: new Map<string, string>(),
+    playbackUpdateRateLimiter: createTokenBucketRateLimiter({
+      capacity: PLAYBACK_UPDATE_BURST_CAPACITY,
+      refillRatePerSecond: PLAYBACK_UPDATE_TOKENS_PER_SECOND,
+    }),
   };
 }
 
@@ -85,6 +98,7 @@ export function createConnectionHandler(io: RealtimeServer, state: RealtimeState
 
     socket.on('disconnect', () => {
       const session = state.sessionsBySocket.get(socket.id);
+      state.playbackUpdateRateLimiter.reset(socket.id);
       if (!session) {
         return;
       }
@@ -214,6 +228,11 @@ function handlePlaybackUpdate(
 
   if (payload.update.serviceId !== room.serviceId) {
     acknowledge({ ok: false, error: 'Service mismatch.' });
+    return;
+  }
+
+  if (!state.playbackUpdateRateLimiter.consume(socket.id)) {
+    acknowledge({ ok: false, error: PLAYBACK_UPDATE_RATE_LIMIT_ERROR });
     return;
   }
 

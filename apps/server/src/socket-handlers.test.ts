@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OperationResult, RoomResponse } from '@watch-party/shared';
 import { createRoomState, MAX_TITLE_LENGTH, upsertRoomMember } from '@watch-party/shared';
 
@@ -46,33 +46,65 @@ class FakeSocket {
   }
 }
 
+const validPlaybackUpdatePayload = {
+  roomCode: 'ROOM01',
+  memberId: 'member-a',
+  update: {
+    serviceId: 'youtube',
+    mediaId: 'abc123',
+    title: 'Clip',
+    playing: false,
+    positionSec: 15,
+    issuedAt: 1_777_000_000_000,
+  },
+};
+
+function createPlaybackUpdateTestContext(socketId = 'socket-1') {
+  const io = new FakeIo();
+  const socket = new FakeSocket(socketId);
+  const state = createRealtimeState();
+  const room = createRoomState('ROOM01', {
+    memberId: 'member-a',
+    memberName: 'Member A',
+    serviceId: 'youtube',
+    initialPlayback: {
+      serviceId: 'youtube',
+      mediaId: 'abc123',
+      title: 'Clip',
+      playing: true,
+      positionSec: 10,
+    },
+  });
+
+  upsertRoomMember(room, 'member-a', 'Member A');
+  state.rooms.set(room.roomCode, room);
+
+  createConnectionHandler(io as never, state)(socket as never);
+
+  const playbackUpdateHandler = socket.handlers.get('playback:update') as (
+    payload: unknown,
+    acknowledge: (response: OperationResult<unknown>) => void,
+  ) => void;
+
+  const disconnectHandler = socket.handlers.get('disconnect') as () => void;
+
+  return {
+    io,
+    room,
+    socket,
+    state,
+    playbackUpdateHandler,
+    disconnectHandler,
+  };
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('socket handlers', () => {
   it('rejects invalid payloads before mutating room state', () => {
-    const io = new FakeIo();
-    const socket = new FakeSocket('socket-1');
-    const state = createRealtimeState();
-    const room = createRoomState('ROOM01', {
-      memberId: 'member-a',
-      memberName: 'Member A',
-      serviceId: 'youtube',
-      initialPlayback: {
-        serviceId: 'youtube',
-        mediaId: 'abc123',
-        title: 'Clip',
-        playing: true,
-        positionSec: 10,
-      },
-    });
-
-    upsertRoomMember(room, 'member-a', 'Member A');
-    state.rooms.set(room.roomCode, room);
-
-    createConnectionHandler(io as never, state)(socket as never);
-
-    const playbackUpdateHandler = socket.handlers.get('playback:update') as (
-      payload: unknown,
-      acknowledge: (response: OperationResult<unknown>) => void,
-    ) => void;
+    const { io, room, socket, playbackUpdateHandler } = createPlaybackUpdateTestContext();
 
     let response: OperationResult<unknown> | null = null;
     playbackUpdateHandler(
@@ -89,6 +121,84 @@ describe('socket handlers', () => {
     expect(room.sequence).toBe(1);
     expect(io.emitted).toHaveLength(0);
     expect(socket.emitted).toHaveLength(0);
+  });
+
+  it('rejects playback updates after the socket exhausts its token bucket', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
+
+    const { io, room, socket, playbackUpdateHandler } = createPlaybackUpdateTestContext();
+
+    for (let index = 0; index < 20; index += 1) {
+      let response: OperationResult<unknown> | null = null;
+      playbackUpdateHandler(validPlaybackUpdatePayload, (value) => {
+        response = value;
+      });
+      expect(response).toMatchObject({ ok: true });
+    }
+
+    let response: OperationResult<unknown> | null = null;
+    playbackUpdateHandler(validPlaybackUpdatePayload, (value) => {
+      response = value;
+    });
+
+    expect(response).toEqual({
+      ok: false,
+      error: 'Playback update rate limit exceeded.',
+    });
+    expect(room.sequence).toBe(21);
+    expect(socket.emitted).toHaveLength(20);
+    expect(io.emitted).toHaveLength(0);
+  });
+
+  it('refills playback update tokens over time', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
+
+    const { room, socket, playbackUpdateHandler } = createPlaybackUpdateTestContext();
+
+    for (let index = 0; index < 20; index += 1) {
+      playbackUpdateHandler(validPlaybackUpdatePayload, () => undefined);
+    }
+
+    let rejectedResponse: OperationResult<unknown> | null = null;
+    playbackUpdateHandler(validPlaybackUpdatePayload, (value) => {
+      rejectedResponse = value;
+    });
+    expect(rejectedResponse).toEqual({
+      ok: false,
+      error: 'Playback update rate limit exceeded.',
+    });
+
+    vi.setSystemTime(new Date('2026-04-23T12:00:00.100Z'));
+
+    let acceptedResponse: OperationResult<unknown> | null = null;
+    playbackUpdateHandler(validPlaybackUpdatePayload, (value) => {
+      acceptedResponse = value;
+    });
+
+    expect(acceptedResponse).toMatchObject({ ok: true });
+    expect(room.sequence).toBe(22);
+    expect(socket.emitted).toHaveLength(21);
+  });
+
+  it('cleans up playback rate limit state on disconnect', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
+
+    const { disconnectHandler, playbackUpdateHandler, state } =
+      createPlaybackUpdateTestContext();
+
+    playbackUpdateHandler(validPlaybackUpdatePayload, () => undefined);
+
+    expect(state.playbackUpdateRateLimiter.consume('socket-1')).toBe(true);
+
+    disconnectHandler();
+
+    for (let index = 0; index < 20; index += 1) {
+      expect(state.playbackUpdateRateLimiter.consume('socket-1')).toBe(true);
+    }
+    expect(state.playbackUpdateRateLimiter.consume('socket-1')).toBe(false);
   });
 
   it('sanitizes valid room creation payloads before storing and broadcasting', () => {
