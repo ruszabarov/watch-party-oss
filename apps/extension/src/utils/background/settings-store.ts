@@ -1,15 +1,15 @@
-import { localExtStorage } from '@webext-core/storage';
+import { storage } from 'wxt/utils/storage';
 
 import type { InternalState, SessionInfo, StoredSettings } from './state';
 import { normalizeMemberName, normalizeServerUrl } from './state';
 
-const SETTINGS_KEY = 'watch-party-settings';
+const settingsItem = storage.defineItem<StoredSettings>('local:watch-party-settings');
 
 export class SettingsStore {
   constructor(private readonly state: InternalState) {}
 
   async hydrate(): Promise<void> {
-    const stored = (await localExtStorage.getItem(SETTINGS_KEY)) as StoredSettings | null;
+    const stored = await settingsItem.getValue();
 
     if (!stored) {
       await this.persist();
@@ -43,6 +43,6 @@ export class SettingsStore {
       session: this.state.session,
     };
 
-    await localExtStorage.setItem(SETTINGS_KEY, storedSettings);
+    await settingsItem.setValue(storedSettings);
   }
 }
