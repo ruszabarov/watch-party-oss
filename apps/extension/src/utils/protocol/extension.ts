@@ -72,35 +72,6 @@ export function createDefaultPopupState(
   };
 }
 
-export function isPopupState(value: unknown): value is PopupState {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as Partial<PopupState>;
-  const settings = candidate.settings;
-  const activeTab = candidate.activeTab;
-
-  return Boolean(
-    settings &&
-      typeof settings === 'object' &&
-      typeof settings.memberName === 'string' &&
-      typeof settings.serverUrl === 'string' &&
-      activeTab &&
-      typeof activeTab === 'object' &&
-      typeof activeTab.title === 'string' &&
-      typeof activeTab.url === 'string' &&
-      typeof candidate.connectionStatus === 'string',
-  );
-}
-
-export function coercePopupState(
-  value: unknown,
-  fallback: PopupState = createDefaultPopupState(),
-): PopupState {
-  return isPopupState(value) ? value : fallback;
-}
-
 export interface ApplySnapshotResult {
   applied: boolean;
   reason?: string;

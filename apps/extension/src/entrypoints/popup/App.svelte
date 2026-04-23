@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
 
   import {
-    coercePopupState,
     createDefaultPopupState,
     type PopupState,
   } from '../../utils/protocol/extension';
@@ -15,7 +14,6 @@
   import Notice from '../../components/popup/Notice.svelte';
 
   const emptyState = createDefaultPopupState();
-  const POPUP_STATE_RETRY_DELAY_MS = 50;
 
   let popup: PopupState = $state(emptyState);
   let isBusy = $state(false);
@@ -23,7 +21,7 @@
 
   async function syncState(): Promise<void> {
     try {
-      popup = await requestPopupState({ type: 'party:get-state' });
+      popup = await sendBackgroundRequest({ type: 'party:get-state' });
     } catch (error) {
       popup = { ...popup, lastError: getErrorMessage(error) };
     }
@@ -31,7 +29,7 @@
 
   async function sendRequest(request: PopupRequest): Promise<PopupState> {
     try {
-      return await requestPopupState(request);
+      return await sendBackgroundRequest(request);
     } catch (error) {
       return { ...popup, lastError: getErrorMessage(error) };
     }
@@ -83,19 +81,6 @@
 
   function closeSettings(): void {
     settingsOpen = false;
-  }
-
-  async function requestPopupState(request: PopupRequest): Promise<PopupState> {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await sendBackgroundRequest(request);
-      if (attempt === 1 || response != null) {
-        return coercePopupState(response, popup);
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, POPUP_STATE_RETRY_DELAY_MS));
-    }
-
-    return popup;
   }
 
   async function sendBackgroundRequest(request: PopupRequest): Promise<PopupState> {
