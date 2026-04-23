@@ -53,7 +53,7 @@ export class PartySessionService {
       this.state.lastError = getErrorMessage(error);
       this.state.connectionStatus = 'error';
       await this.settingsStore.persist();
-      emitStateChanged();
+      emitStateChanged(this.state);
     }
   }
 
@@ -130,7 +130,7 @@ export class PartySessionService {
     this.state.lastError = null;
     this.state.lastWarning = null;
     await this.settingsStore.persist();
-    emitStateChanged();
+    emitStateChanged(this.state);
 
     return buildPopupState(this.state);
   }
@@ -149,7 +149,7 @@ export class PartySessionService {
     const playbackContext = this.tabSync.getControlledTabContext();
     if (playbackContext?.mediaId && playbackContext.mediaId !== update.mediaId) {
       this.state.lastWarning = 'Local title no longer matches the active room.';
-      emitStateChanged();
+      emitStateChanged(this.state);
       return buildPopupState(this.state);
     }
 
@@ -160,7 +160,7 @@ export class PartySessionService {
     });
 
     if (!isLocalRelay) {
-      emitStateChanged();
+      emitStateChanged(this.state);
     }
 
     return buildPopupState(this.state);
@@ -182,7 +182,7 @@ export class PartySessionService {
     }
 
     this.state.connectionStatus = 'connecting';
-    emitStateChanged();
+    emitStateChanged(this.state);
 
     this.socket = io(serverUrl, {
       autoConnect: true,
@@ -215,31 +215,31 @@ export class PartySessionService {
         }
       }
 
-      emitStateChanged();
+      emitStateChanged(this.state);
     });
 
     this.socket.on('disconnect', () => {
       this.state.connectionStatus = this.state.session ? 'reconnecting' : 'disconnected';
-      emitStateChanged();
+      emitStateChanged(this.state);
     });
 
     this.socket.on('connect_error', (error) => {
       this.state.connectionStatus = 'error';
       this.state.lastError = error.message;
-      emitStateChanged();
+      emitStateChanged(this.state);
     });
 
     this.socket.on('room:state', async (snapshot) => {
       this.state.room = snapshot;
       this.state.lastWarning = null;
-      emitStateChanged();
+      emitStateChanged(this.state);
     });
 
     this.socket.on('playback:state', async (snapshot) => {
       this.state.room = snapshot;
       this.state.lastWarning = null;
       await this.tabSync.applySnapshotToControlledTab();
-      emitStateChanged();
+      emitStateChanged(this.state);
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -270,7 +270,7 @@ export class PartySessionService {
     this.state.connectionStatus = 'connected';
     this.state.lastError = null;
     await this.settingsStore.persistSession(this.state.session);
-    emitStateChanged();
+    emitStateChanged(this.state);
   }
 
   private async emitRoomCreate(payload: CreateRoomRequest): Promise<RoomResponse> {

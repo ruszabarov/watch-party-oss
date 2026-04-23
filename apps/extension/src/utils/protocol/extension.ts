@@ -76,4 +76,7 @@ export interface ApplySnapshotResult {
   context: ServiceContentContext | null;
 }
 
-export type BackgroundBroadcast = { type: 'party:state-updated' };
+export type BackgroundBroadcast = {
+  type: 'party:state-updated';
+  state: PopupState;
+};

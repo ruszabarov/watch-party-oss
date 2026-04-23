@@ -56,7 +56,7 @@ export class TabSyncService {
         tab.url === this.pendingControlledNavigationUrl
       ) {
         this.deps.state.lastWarning = null;
-        emitStateChanged();
+        emitStateChanged(this.deps.state);
       }
 
       if (tabId === this.deps.state.controlledTabId && tab.url) {
@@ -65,7 +65,7 @@ export class TabSyncService {
           : null;
         if (sessionPlugin && !sessionPlugin.matchesService(tab.url)) {
           this.deps.state.lastWarning = `The controlled tab left ${sessionPlugin.descriptor.label}.`;
-          emitStateChanged();
+          emitStateChanged(this.deps.state);
         }
       }
     });
@@ -82,7 +82,7 @@ export class TabSyncService {
         this.deps.state.lastWarning = sessionPlugin
           ? `The controlled ${sessionPlugin.descriptor.label} tab was closed.`
           : 'The controlled tab was closed.';
-        emitStateChanged();
+        emitStateChanged(this.deps.state);
       }
     });
   }
@@ -97,7 +97,7 @@ export class TabSyncService {
       this.deps.state.activeTab = createEmptyActiveTabSummary();
       this.deps.state.contentContext = null;
       if (notify) {
-        emitStateChanged();
+        emitStateChanged(this.deps.state);
       }
       return;
     }
@@ -115,7 +115,7 @@ export class TabSyncService {
     }
 
     if (notify) {
-      emitStateChanged();
+      emitStateChanged(this.deps.state);
     }
   }
 
@@ -128,7 +128,7 @@ export class TabSyncService {
       this.deps.state.contentContext = context;
     }
 
-    emitStateChanged();
+    emitStateChanged(this.deps.state);
   }
 
   async relayControlledPlaybackUpdate(
@@ -188,7 +188,7 @@ export class TabSyncService {
   async navigateControlledTabToRoom(tabId: number, watchUrl: string): Promise<void> {
     this.pendingControlledNavigationUrl = watchUrl;
     this.deps.state.lastWarning = null;
-    emitStateChanged();
+    emitStateChanged(this.deps.state);
 
     try {
       await browser.tabs.update(tabId, { url: watchUrl, active: true });

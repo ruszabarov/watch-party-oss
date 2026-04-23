@@ -4,6 +4,7 @@
 
   import {
     createDefaultPopupState,
+    type BackgroundBroadcast,
     type PopupState,
   } from '../../utils/protocol/extension';
   import { getErrorMessage } from '../../utils/errors';
@@ -63,9 +64,7 @@
   }
 
   function handleSaveSettings(next: PopupState['settings']): void {
-    void perform(() => backgroundService.updateSettings(next)).then(() => {
-      closeSettings();
-    });
+    void perform(() => backgroundService.updateSettings(next)).then(closeSettings);
   }
 
   function dismissError(): void {
@@ -84,12 +83,22 @@
     settingsOpen = false;
   }
 
+  function isBackgroundBroadcast(message: unknown): message is BackgroundBroadcast {
+    return (
+      !!message &&
+      typeof message === 'object' &&
+      'type' in message &&
+      message.type === 'party:state-updated' &&
+      'state' in message
+    );
+  }
+
   onMount(() => {
     void syncState();
 
-    const listener = (message: { type?: string }) => {
-      if (message?.type === 'party:state-updated') {
-        void syncState();
+    const listener = (message: unknown) => {
+      if (isBackgroundBroadcast(message)) {
+        popup = message.state;
       }
     };
 

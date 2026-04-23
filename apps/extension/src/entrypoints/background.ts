@@ -30,7 +30,6 @@ export default defineBackground(() => {
       state,
       settingsStore,
       partySessionService,
-      tabSyncService,
     ),
   );
 

@@ -5,13 +5,11 @@ import type { PartySessionService } from './party-session-service';
 import type { SettingsStore } from './settings-store';
 import type { InternalState } from './state';
 import { buildPopupState } from './state';
-import type { TabSyncService } from './tab-sync-service';
 
 export function createPopupBackgroundService(
   state: InternalState,
   settingsStore: SettingsStore,
   partySessionService: PartySessionService,
-  tabSyncService: TabSyncService,
 ) {
   async function handlePopupRequest<T>(
     handler: () => Promise<T>,
@@ -22,23 +20,19 @@ export function createPopupBackgroundService(
     } catch (error) {
       state.lastError = getErrorMessage(error);
       if (emitErrorState) {
-        emitStateChanged();
+        emitStateChanged(state);
       }
       return buildPopupState(state);
     }
   }
 
   return {
-    getState: () =>
-      handlePopupRequest(async () => {
-        await tabSyncService.refreshActiveTab(false);
-        return buildPopupState(state);
-      }),
+    getState: () => handlePopupRequest(async () => buildPopupState(state)),
 
     updateSettings: ({ serverUrl, memberName }: PopupState['settings']) =>
       handlePopupRequest(async () => {
         await settingsStore.updateSettings({ serverUrl, memberName });
-        emitStateChanged();
+        emitStateChanged(state);
         return buildPopupState(state);
       }),
 
