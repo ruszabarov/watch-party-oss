@@ -6,11 +6,11 @@ import type {
   PlaybackUpdate,
   ServiceId,
 } from './protocol';
+import { buildCanonicalWatchUrl } from './services';
 
 export interface RoomState {
   roomCode: string;
   serviceId: ServiceId;
-  watchUrl: string;
   members: Map<string, PartyMember>;
   playback: PlaybackState;
   sequence: number;
@@ -39,6 +39,12 @@ export function createRoomState(
   request: CreateRoomRequest,
   now = Date.now(),
 ): RoomState {
+  if (request.initialPlayback.serviceId !== request.serviceId) {
+    throw new Error('Initial playback service must match the room service.');
+  }
+
+  assertCanonicalWatchUrl(request.serviceId, request.initialPlayback.mediaId);
+
   const sequence = 1;
   const playback: PlaybackState = {
     ...request.initialPlayback,
@@ -50,7 +56,6 @@ export function createRoomState(
   return {
     roomCode,
     serviceId: request.serviceId,
-    watchUrl: request.watchUrl,
     members: new Map<string, PartyMember>(),
     playback,
     sequence,
@@ -89,6 +94,8 @@ export function applyPlaybackUpdate(
   memberId: string,
   now = Date.now(),
 ): PlaybackState {
+  assertCanonicalWatchUrl(update.serviceId, update.mediaId);
+
   room.sequence += 1;
   const playback: PlaybackState = {
     serviceId: update.serviceId,
@@ -127,10 +134,15 @@ export function toPartySnapshot(
   room: RoomState,
   now = Date.now(),
 ): PartySnapshot {
+  const watchUrl = buildCanonicalWatchUrl(room.serviceId, room.playback.mediaId);
+  if (!watchUrl) {
+    throw new Error('Could not derive a canonical watch URL for this service.');
+  }
+
   return {
     roomCode: room.roomCode,
     serviceId: room.serviceId,
-    watchUrl: room.watchUrl,
+    watchUrl,
     members: [...room.members.values()].sort((left, right) => {
       return left.joinedAt - right.joinedAt;
     }),
@@ -146,4 +158,10 @@ function normalizePosition(value: number): number {
   }
 
   return Math.max(0, Number(value.toFixed(3)));
+}
+
+function assertCanonicalWatchUrl(serviceId: ServiceId, mediaId: string): void {
+  if (!buildCanonicalWatchUrl(serviceId, mediaId)) {
+    throw new Error('Could not derive a canonical watch URL for this service.');
+  }
 }

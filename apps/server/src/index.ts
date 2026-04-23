@@ -45,18 +45,28 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
 
 io.on('connection', (socket) => {
   socket.on('room:create', (payload, acknowledge) => {
-    const roomCode = getUniqueRoomCode();
-    const room = createRoomState(roomCode, payload);
+    let room: RoomState;
+
+    try {
+      const roomCode = getUniqueRoomCode();
+      room = createRoomState(roomCode, payload);
+    } catch (error) {
+      acknowledge({
+        ok: false,
+        error: error instanceof Error ? error.message : 'Room creation failed.',
+      });
+      return;
+    }
 
     upsertRoomMember(room, payload.memberId, payload.memberName);
-    rooms.set(roomCode, room);
+    rooms.set(room.roomCode, room);
 
-    bindMemberToSocket(socket.id, roomCode, payload.memberId);
-    socket.join(roomCode);
+    bindMemberToSocket(socket.id, room.roomCode, payload.memberId);
+    socket.join(room.roomCode);
 
     const snapshot = toPartySnapshot(room);
     acknowledge({ ok: true, data: { memberId: payload.memberId, snapshot } });
-    io.to(roomCode).emit('room:state', snapshot);
+    io.to(room.roomCode).emit('room:state', snapshot);
   });
 
   socket.on('room:join', (payload, acknowledge) => {
@@ -110,7 +120,15 @@ io.on('connection', (socket) => {
       return;
     }
 
-    applyPlaybackUpdate(room, payload.update, payload.memberId);
+    try {
+      applyPlaybackUpdate(room, payload.update, payload.memberId);
+    } catch (error) {
+      acknowledge({
+        ok: false,
+        error: error instanceof Error ? error.message : 'Playback update failed.',
+      });
+      return;
+    }
     const snapshot = toPartySnapshot(room);
 
     acknowledge({ ok: true, data: snapshot });

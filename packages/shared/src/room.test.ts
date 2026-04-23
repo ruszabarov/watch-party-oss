@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildCanonicalWatchUrl,
   applyPlaybackUpdate,
   createRoomState,
   normalizeRoomCode,
@@ -21,7 +22,6 @@ describe('room reducer', () => {
         memberId: 'member-a',
         memberName: 'Member A',
         serviceId: 'netflix',
-        watchUrl: 'https://www.netflix.com/watch/123',
         initialPlayback: {
           serviceId: 'netflix',
           mediaId: '123',
@@ -75,7 +75,6 @@ describe('room reducer', () => {
         memberId: 'member-a',
         memberName: 'Member A',
         serviceId: 'netflix',
-        watchUrl: 'https://www.netflix.com/watch/456',
         initialPlayback: {
           serviceId: 'netflix',
           mediaId: '456',
@@ -116,7 +115,6 @@ describe('room reducer', () => {
         memberId: 'member-a',
         memberName: 'Member A',
         serviceId: 'youtube',
-        watchUrl: 'https://www.youtube.com/watch?v=abc123',
         initialPlayback: {
           serviceId: 'youtube',
           mediaId: 'abc123',
@@ -130,5 +128,65 @@ describe('room reducer', () => {
 
     const snapshot = toPartySnapshot(room, 2_000);
     expect(snapshot.watchUrl).toBe('https://www.youtube.com/watch?v=abc123');
+  });
+
+  it('builds canonical watch urls per service', () => {
+    expect(buildCanonicalWatchUrl('netflix', '123456')).toBe(
+      'https://www.netflix.com/watch/123456',
+    );
+    expect(buildCanonicalWatchUrl('youtube', 'abc123_-')).toBe(
+      'https://www.youtube.com/watch?v=abc123_-',
+    );
+  });
+
+  it('rejects invalid media ids when deriving canonical watch urls', () => {
+    expect(buildCanonicalWatchUrl('netflix', 'abc123')).toBeNull();
+    expect(buildCanonicalWatchUrl('youtube', 'abc/123')).toBeNull();
+    expect(() =>
+      createRoomState('ROOM04', {
+        memberId: 'member-a',
+        memberName: 'Member A',
+        serviceId: 'youtube',
+        initialPlayback: {
+          serviceId: 'youtube',
+          mediaId: 'abc/123',
+          title: 'Clip',
+          positionSec: 4,
+          playing: true,
+        },
+      }),
+    ).toThrow('Could not derive a canonical watch URL for this service.');
+  });
+
+  it('updates the canonical watch url when playback media changes', () => {
+    const room = createRoomState('ROOM05', {
+      memberId: 'member-a',
+      memberName: 'Member A',
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: 'abc123',
+        title: 'Clip',
+        positionSec: 4,
+        playing: true,
+      },
+    });
+
+    applyPlaybackUpdate(
+      room,
+      {
+        serviceId: 'youtube',
+        mediaId: 'next456',
+        positionSec: 0,
+        playing: false,
+        issuedAt: 2_100,
+      },
+      'member-a',
+      2_200,
+    );
+
+    expect(toPartySnapshot(room).watchUrl).toBe(
+      'https://www.youtube.com/watch?v=next456',
+    );
   });
 });

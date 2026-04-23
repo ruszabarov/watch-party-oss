@@ -66,7 +66,6 @@ export class PartySessionService {
       memberId: this.ensureMemberId(),
       memberName: this.state.settings.memberName,
       serviceId: context.serviceId,
-      watchUrl: context.href,
       initialPlayback: {
         serviceId: context.serviceId,
         mediaId: context.mediaId,
