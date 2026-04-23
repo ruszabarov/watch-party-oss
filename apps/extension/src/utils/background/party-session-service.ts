@@ -235,20 +235,10 @@ export class PartySessionService {
       emitStateChanged();
     });
 
-    this.socket.on('presence:state', (snapshot) => {
-      this.state.room = snapshot;
-      emitStateChanged();
-    });
-
     this.socket.on('playback:state', async (snapshot) => {
       this.state.room = snapshot;
       this.state.lastWarning = null;
       await this.tabSync.applySnapshotToControlledTab();
-      emitStateChanged();
-    });
-
-    this.socket.on('server:error', (error) => {
-      this.state.lastError = error.message;
       emitStateChanged();
     });
 

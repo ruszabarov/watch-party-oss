@@ -44,23 +44,6 @@ export interface PartySnapshot {
   createdAt: number;
 }
 
-export interface PresenceUpdate {
-  roomCode: string;
-  memberId: string;
-  mediaId?: string;
-  playbackReady: boolean;
-}
-
-export interface ServerError {
-  code:
-    | 'INVALID_ROOM'
-    | 'ROOM_NOT_FOUND'
-    | 'SERVICE_MISMATCH'
-    | 'NOT_IN_ROOM'
-    | 'INVALID_COMMAND';
-  message: string;
-}
-
 export type OperationResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };
@@ -115,12 +98,9 @@ export interface ClientToServerEvents {
     payload: PlaybackUpdateRequest,
     acknowledge: Acknowledge<PartySnapshot>,
   ) => void;
-  'presence:update': (payload: PresenceUpdate) => void;
 }
 
 export interface ServerToClientEvents {
   'room:state': (snapshot: PartySnapshot) => void;
   'playback:state': (snapshot: PartySnapshot) => void;
-  'presence:state': (snapshot: PartySnapshot) => void;
-  'server:error': (error: ServerError) => void;
 }

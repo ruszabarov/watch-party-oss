@@ -79,7 +79,7 @@ io.on('connection', (socket) => {
 
     const snapshot = toPartySnapshot(room);
     acknowledge({ ok: true, data: { memberId: payload.memberId, snapshot } });
-    io.to(roomCode).emit('presence:state', snapshot);
+    io.to(roomCode).emit('room:state', snapshot);
   });
 
   socket.on('room:leave', (payload, acknowledge) => {
@@ -114,10 +114,6 @@ io.on('connection', (socket) => {
 
     acknowledge({ ok: true, data: snapshot });
     socket.to(room.roomCode).emit('playback:state', snapshot);
-  });
-
-  socket.on('presence:update', () => {
-    // Presence data is not persisted in MVP, but the event remains part of the protocol.
   });
 
   socket.on('disconnect', () => {
@@ -188,7 +184,7 @@ function leaveRoom(roomCodeValue: string, memberId: string): void {
     return;
   }
 
-  io.to(roomCode).emit('presence:state', toPartySnapshot(room));
+  io.to(roomCode).emit('room:state', toPartySnapshot(room));
 }
 
 function memberKey(roomCode: string, memberId: string): string {
