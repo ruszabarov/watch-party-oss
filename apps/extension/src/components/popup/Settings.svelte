@@ -4,7 +4,7 @@
     DEFAULT_SERVER_URL,
     SHOW_SERVER_SETTINGS,
     type PopupState,
-  } from '../../../lib/protocol/extension';
+  } from '../../utils/protocol/extension';
 
   interface Props {
     settings: PopupState['settings'];

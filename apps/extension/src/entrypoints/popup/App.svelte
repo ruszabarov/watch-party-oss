@@ -5,14 +5,14 @@
     coercePopupState,
     createDefaultPopupState,
     type PopupState,
-  } from '../../lib/protocol/extension';
-  import { sendMessage, type PopupRequest } from '../../lib/protocol/messaging';
+  } from '../../utils/protocol/extension';
+  import { sendMessage, type PopupRequest } from '../../utils/protocol/messaging';
 
-  import Header from './ui/Header.svelte';
-  import Lobby from './ui/Lobby.svelte';
-  import Room from './ui/Room.svelte';
-  import Settings from './ui/Settings.svelte';
-  import Notice from './ui/Notice.svelte';
+  import Header from '../../components/popup/Header.svelte';
+  import Lobby from '../../components/popup/Lobby.svelte';
+  import Room from '../../components/popup/Room.svelte';
+  import Settings from '../../components/popup/Settings.svelte';
+  import Notice from '../../components/popup/Notice.svelte';
 
   const emptyState = createDefaultPopupState();
   const POPUP_STATE_RETRY_DELAY_MS = 50;

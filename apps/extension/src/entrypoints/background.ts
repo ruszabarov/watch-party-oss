@@ -18,10 +18,10 @@ import {
   type BackgroundBroadcast,
   type PopupState,
   type ServiceContentContext,
-} from '../lib/protocol/extension';
-import { onMessage, sendMessage } from '../lib/protocol/messaging';
-import { findPluginByUrl, getPlugin } from '../lib/services/registry';
-import type { ServicePlugin } from '../lib/services/types';
+} from '../utils/protocol/extension';
+import { onMessage, sendMessage } from '../utils/protocol/messaging';
+import { findPluginByUrl, getPlugin } from '../utils/services/registry';
+import type { ServicePlugin } from '../utils/services/types';
 type BrowserTab = Parameters<Parameters<typeof browser.tabs.onUpdated.addListener>[0]>[2];
 
 type SessionInfo = {

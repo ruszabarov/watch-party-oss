@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { PopupState } from "../../../lib/protocol/extension";
+  import type { PopupState } from "../../utils/protocol/extension";
   import {
     SUPPORTED_SERVICE_DESCRIPTORS,
     getServiceDescriptor,
-  } from "../../../lib/services/registry";
+  } from "../../utils/services/registry";
   import ServiceBadge from "./ServiceBadge.svelte";
 
   interface Props {

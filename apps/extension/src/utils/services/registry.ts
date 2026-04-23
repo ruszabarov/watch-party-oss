@@ -9,7 +9,7 @@ import type { ServiceDescriptor, ServicePlugin } from './types';
  *
  * Adding a service:
  *   1. Add a `ServiceId` to `packages/shared/src/protocol.ts`.
- *   2. Create a `ServicePlugin` at `apps/extension/src/lib/services/<id>.ts`.
+ *   2. Create a `ServicePlugin` at `apps/extension/src/utils/services/<id>.ts`.
  *   3. Add a one-line entrypoint at `src/entrypoints/<id>.content.ts` via
  *      `createServiceContentScript(MY_SERVICE)`.
  *   4. Append the plugin below and add its origin(s) to `host_permissions`

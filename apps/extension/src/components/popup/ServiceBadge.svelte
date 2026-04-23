@@ -3,7 +3,7 @@
   import {
     SUPPORTED_SERVICE_DESCRIPTORS,
     getServiceDescriptor,
-  } from '../../../lib/services/registry';
+  } from '../../utils/services/registry';
 
   interface Props {
     serviceId?: ServiceId | null;

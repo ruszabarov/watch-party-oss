@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PopupState } from '../../../lib/protocol/extension';
+  import type { PopupState } from '../../utils/protocol/extension';
 
   interface Props {
     popup: PopupState;
