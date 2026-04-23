@@ -120,10 +120,6 @@ io.on('connection', (socket) => {
     // Presence data is not persisted in MVP, but the event remains part of the protocol.
   });
 
-  socket.on('ping', (_, acknowledge) => {
-    acknowledge({ ok: true, data: { pong: true } });
-  });
-
   socket.on('disconnect', () => {
     const session = sessionsBySocket.get(socket.id);
     if (!session) {

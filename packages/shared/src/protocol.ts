@@ -93,11 +93,6 @@ export interface PlaybackUpdateRequest {
   update: PlaybackUpdate;
 }
 
-export interface PingRequest {
-  roomCode?: string;
-  memberId?: string;
-}
-
 export interface RoomResponse {
   memberId: string;
   snapshot: PartySnapshot;
@@ -121,7 +116,6 @@ export interface ClientToServerEvents {
     acknowledge: Acknowledge<PartySnapshot>,
   ) => void;
   'presence:update': (payload: PresenceUpdate) => void;
-  ping: (payload: PingRequest, acknowledge: Acknowledge<{ pong: true }>) => void;
 }
 
 export interface ServerToClientEvents {
