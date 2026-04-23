@@ -10,6 +10,7 @@ import type {
 export interface RoomState {
   roomCode: string;
   serviceId: ServiceId;
+  watchUrl: string;
   members: Map<string, PartyMember>;
   playback: PlaybackState;
   sequence: number;
@@ -45,6 +46,7 @@ export function createRoomState(
   return {
     roomCode,
     serviceId: request.serviceId,
+    watchUrl: request.watchUrl,
     members: new Map<string, PartyMember>(),
     playback,
     sequence,
@@ -124,6 +126,7 @@ export function toPartySnapshot(
   return {
     roomCode: room.roomCode,
     serviceId: room.serviceId,
+    watchUrl: room.watchUrl,
     members: [...room.members.values()].sort((left, right) => {
       return left.joinedAt - right.joinedAt;
     }),

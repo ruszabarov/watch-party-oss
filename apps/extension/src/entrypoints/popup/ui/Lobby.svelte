@@ -24,6 +24,8 @@
   );
 
   const isReady = $derived(popup.activeTab.isWatchPage);
+  const canCreate = $derived(isReady && !isBusy);
+  const canJoin = $derived(!isBusy);
 
   const title = $derived.by(() => {
     if (isReady) {
@@ -33,7 +35,7 @@
         "Ready to start"
       );
     }
-    return "Open a supported video page";
+    return "Open a video page to create a room";
   });
 
   const hint = $derived.by(() => {
@@ -42,17 +44,15 @@
         ? `Watching on ${activeDescriptor.label}. Invite friends with a code.`
         : "Create a room or join one with a code.";
     }
-    return (
-      popup.contentContext?.issue ??
-      `Start a playback page to begin — try ${SUPPORTED_SERVICE_DESCRIPTORS.map(
-        (d) => d.watchPathHint,
-      ).join(", ")}.`
-    );
+    const watchPageHint = SUPPORTED_SERVICE_DESCRIPTORS.map(
+      (d) => d.watchPathHint,
+    ).join(", ");
+    return popup.contentContext?.issue
+      ? `${popup.contentContext.issue} You can still join with a code and be redirected automatically.`
+      : `Create rooms from a playback page — try ${watchPageHint}. You can join with a code from any tab.`;
   });
 
   const trimmedCode = $derived(joinCode.trim());
-
-  const canAct = $derived(isReady && !isBusy);
 
   function handleJoin(): void {
     if (!trimmedCode) return;
@@ -82,7 +82,7 @@
     class="btn-primary"
     type="button"
     onclickcapture={onCreateRoom}
-    disabled={!canAct}
+    disabled={!canCreate}
   >
     Create room
   </button>
@@ -114,7 +114,7 @@
       <button
         class="btn-secondary"
         type="submit"
-        disabled={!canAct || !trimmedCode}
+        disabled={!canJoin || !trimmedCode}
       >
         Join
       </button>

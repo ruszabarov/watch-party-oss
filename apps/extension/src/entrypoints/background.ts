@@ -44,6 +44,7 @@ const SETTINGS_KEY = 'watch-party-settings';
 
 let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 let currentSocketUrl: string | null = null;
+let pendingControlledNavigationUrl: string | null = null;
 
 const state: InternalState = {
   settings: {
@@ -147,6 +148,9 @@ function registerEventHandlers(): void {
   onMessage('content:request-sync', async ({ sender }) => {
     if (sender.tab?.id != null && state.room) {
       state.controlledTabId ??= sender.tab.id;
+      if (state.controlledTabId === sender.tab.id) {
+        pendingControlledNavigationUrl = null;
+      }
       await applySnapshotToControlledTab();
     }
   });
@@ -158,6 +162,16 @@ function registerEventHandlers(): void {
   browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' || changeInfo.url) {
       await refreshActiveTab();
+    }
+
+    if (
+      tabId === state.controlledTabId &&
+      pendingControlledNavigationUrl &&
+      tab.url &&
+      tab.url === pendingControlledNavigationUrl
+    ) {
+      state.lastWarning = null;
+      emitStateChanged();
     }
 
     if (tabId === state.controlledTabId && tab.url) {
@@ -293,6 +307,7 @@ async function createRoom(): Promise<PopupState> {
     memberId: ensureMemberId(),
     memberName: state.settings.memberName,
     serviceId: context.serviceId,
+    watchUrl: context.href,
     initialPlayback: {
       serviceId: context.serviceId,
       mediaId: context.mediaId,
@@ -310,18 +325,26 @@ async function createRoom(): Promise<PopupState> {
 }
 
 async function joinRoom(roomCode: string): Promise<PopupState> {
-  const { context } = await requireControllableWatchTab();
+  const tabId = state.activeTab.tabId;
+  if (tabId == null) {
+    throw new Error('Open a browser tab before joining a room.');
+  }
 
   const response = await emitWithAck<RoomResponse>('room:join', {
     roomCode: roomCode.trim().toUpperCase(),
     memberId: ensureMemberId(),
     memberName: state.settings.memberName,
-    serviceId: context.serviceId,
   });
 
-  state.controlledTabId = state.activeTab.tabId;
   applyRoomResponse(response);
-  await applySnapshotToControlledTab();
+  state.controlledTabId = tabId;
+
+  try {
+    await navigateControlledTabToRoom(tabId, response.snapshot.watchUrl);
+  } catch (error) {
+    await leaveRoom();
+    throw error;
+  }
 
   return buildPopupState();
 }
@@ -344,6 +367,7 @@ async function leaveRoom(): Promise<PopupState> {
   socket?.disconnect();
   socket = null;
   currentSocketUrl = null;
+  pendingControlledNavigationUrl = null;
   state.connectionStatus = 'disconnected';
   state.lastError = null;
   state.lastWarning = null;
@@ -535,6 +559,10 @@ async function applySnapshotToControlledTab(): Promise<void> {
     return;
   }
 
+  if (pendingControlledNavigationUrl) {
+    return;
+  }
+
   const sessionPlugin = state.session ? getPlugin(state.session.serviceId) : null;
 
   const result = await applySnapshotToTab(state.controlledTabId, state.room);
@@ -552,6 +580,19 @@ async function applySnapshotToControlledTab(): Promise<void> {
   }
 
   state.lastWarning = result.applied ? null : result.reason ?? 'Sync was skipped.';
+}
+
+async function navigateControlledTabToRoom(tabId: number, watchUrl: string): Promise<void> {
+  pendingControlledNavigationUrl = watchUrl;
+  state.lastWarning = null;
+  emitStateChanged();
+
+  try {
+    await browser.tabs.update(tabId, { url: watchUrl, active: true });
+  } catch {
+    pendingControlledNavigationUrl = null;
+    throw new Error('Could not open the room video in the current tab.');
+  }
 }
 
 function applyRoomResponse(response: RoomResponse): void {

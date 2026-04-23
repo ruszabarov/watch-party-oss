@@ -16,6 +16,14 @@ describe('room reducer', () => {
         memberId: 'member-a',
         memberName: 'Member A',
         serviceId: 'netflix',
+        watchUrl: 'https://www.netflix.com/watch/123',
+        initialPlayback: {
+          serviceId: 'netflix',
+          mediaId: '123',
+          title: 'Example',
+          positionSec: 0,
+          playing: false,
+        },
       },
       1_000,
     );
@@ -62,6 +70,14 @@ describe('room reducer', () => {
         memberId: 'member-a',
         memberName: 'Member A',
         serviceId: 'netflix',
+        watchUrl: 'https://www.netflix.com/watch/456',
+        initialPlayback: {
+          serviceId: 'netflix',
+          mediaId: '456',
+          title: 'Example',
+          positionSec: 0,
+          playing: false,
+        },
       },
       1_000,
     );
@@ -86,5 +102,28 @@ describe('room reducer', () => {
 
     const snapshot = toPartySnapshot(room, 3_100);
     expect(snapshot.playback.positionSec).toBe(27);
+  });
+
+  it('includes the canonical watch url in snapshots', () => {
+    const room = createRoomState(
+      'ROOM03',
+      {
+        memberId: 'member-a',
+        memberName: 'Member A',
+        serviceId: 'youtube',
+        watchUrl: 'https://www.youtube.com/watch?v=abc123',
+        initialPlayback: {
+          serviceId: 'youtube',
+          mediaId: 'abc123',
+          title: 'Clip',
+          positionSec: 4,
+          playing: true,
+        },
+      },
+      2_000,
+    );
+
+    const snapshot = toPartySnapshot(room, 2_000);
+    expect(snapshot.watchUrl).toBe('https://www.youtube.com/watch?v=abc123');
   });
 });

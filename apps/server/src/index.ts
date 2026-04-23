@@ -67,7 +67,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (room.serviceId !== payload.serviceId) {
+    if (payload.serviceId && room.serviceId !== payload.serviceId) {
       acknowledge({ ok: false, error: 'This room is using a different service.' });
       return;
     }
