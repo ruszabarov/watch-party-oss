@@ -1,7 +1,6 @@
 import type { PartySnapshot, ServiceId } from '@watch-party/shared';
 
 import {
-  LOCAL_UPDATE_SUPPRESSION_MS,
   SYNC_DRIFT_THRESHOLD_SEC,
   type ApplySnapshotResult,
   type ServiceContentContext,
@@ -38,16 +37,23 @@ const VIDEO_EVENTS = [
   'ended',
 ] as const;
 
-interface NavigationEventTarget {
-  addEventListener(type: 'navigatesuccess', listener: () => void): void;
-  removeEventListener(type: 'navigatesuccess', listener: () => void): void;
-}
-
 interface DomPlaybackState {
   readonly video: HTMLVideoElement | null;
   readonly mediaId: string | undefined;
   readonly mediaTitle: string;
   readonly isWatchPage: boolean;
+}
+
+interface SnapshotPlaybackTarget {
+  readonly video: HTMLVideoElement;
+  readonly targetPositionSec: number;
+  readonly shouldPlay: boolean;
+}
+
+interface SuppressedPlaybackUpdate {
+  readonly mediaId: string;
+  readonly playing: boolean;
+  readonly positionSec: number;
 }
 
 function buildPlaybackState(
@@ -89,21 +95,121 @@ function buildContextFromState(
   };
 }
 
-function getContextSignature(context: ServiceContentContext): string {
-  return JSON.stringify([
-    context.href,
-    context.mediaId,
-    context.mediaTitle,
-    context.playbackReady,
-    context.playing,
-    context.issue,
-  ]);
+function isSameContext(
+  left: ServiceContentContext | null,
+  right: ServiceContentContext,
+): boolean {
+  return (
+    left?.href === right.href &&
+    left.mediaId === right.mediaId &&
+    left.mediaTitle === right.mediaTitle &&
+    left.playbackReady === right.playbackReady &&
+    left.playing === right.playing &&
+    left.issue === right.issue
+  );
+}
+
+function getSuppressedPlaybackUpdate(
+  context: ServiceContentContext,
+): SuppressedPlaybackUpdate | null {
+  if (!context.playbackReady || !context.mediaId) {
+    return null;
+  }
+
+  return {
+    mediaId: context.mediaId,
+    playing: context.playing,
+    positionSec: context.positionSec,
+  };
+}
+
+function isSuppressedPlaybackUpdate(
+  suppressed: SuppressedPlaybackUpdate | null,
+  context: ServiceContentContext,
+): boolean {
+  if (!suppressed || !context.playbackReady || !context.mediaId) {
+    return false;
+  }
+
+  if (
+    suppressed.mediaId !== context.mediaId ||
+    suppressed.playing !== context.playing
+  ) {
+    return false;
+  }
+
+  return (
+    Math.abs(suppressed.positionSec - context.positionSec) <=
+    SYNC_DRIFT_THRESHOLD_SEC
+  );
+}
+
+function getSnapshotPlaybackTarget(
+  snapshot: PartySnapshot,
+  context: ServiceContentContext,
+  video: HTMLVideoElement | null,
+  issueWhenPlayerNotReady: string,
+): SnapshotPlaybackTarget | ApplySnapshotResult {
+  if (!video || !context.playbackReady) {
+    return {
+      applied: false,
+      reason: issueWhenPlayerNotReady,
+      context,
+    };
+  }
+
+  if (context.mediaId && snapshot.playback.mediaId !== context.mediaId) {
+    return {
+      applied: false,
+      reason: 'Current media does not match the room playback.',
+      context,
+    };
+  }
+
+  const elapsedSec = snapshot.playback.playing
+    ? Math.max(0, (Date.now() - snapshot.playback.updatedAt) / 1000)
+    : 0;
+
+  return {
+    video,
+    targetPositionSec: snapshot.playback.positionSec + elapsedSec,
+    shouldPlay: snapshot.playback.playing,
+  };
+}
+
+function syncVideoPosition(
+  video: HTMLVideoElement,
+  targetPositionSec: number,
+): void {
+  if (Math.abs(video.currentTime - targetPositionSec) > SYNC_DRIFT_THRESHOLD_SEC) {
+    video.currentTime = targetPositionSec;
+  }
+}
+
+async function syncVideoPlaybackState(
+  video: HTMLVideoElement,
+  shouldPlay: boolean,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (shouldPlay && video.paused) {
+    try {
+      await video.play();
+    } catch {
+      return {
+        ok: false,
+        reason: 'Browser blocked playback start on this tab.',
+      };
+    }
+  }
+
+  if (!shouldPlay && !video.paused) {
+    video.pause();
+  }
+
+  return { ok: true };
 }
 
 function observeUrlChanges(onChange: () => void): () => void {
-  const navigation = (window as unknown as {
-    navigation: NavigationEventTarget;
-  }).navigation;
+  const { navigation } = window;
   navigation.addEventListener('navigatesuccess', onChange);
 
   return () => {
@@ -128,30 +234,50 @@ export function createDomVideoAdapter(
   const getMediaTitle = () =>
     config.matchMediaTitle?.(document) ?? document.title;
 
-  const buildContext = (): ServiceContentContext => {
-    const state = buildPlaybackState(getVideo, config.matchMediaId, getMediaTitle);
-    return buildContextFromState(state, config);
+  const readPlaybackState = (): DomPlaybackState =>
+    buildPlaybackState(getVideo, config.matchMediaId, getMediaTitle);
+
+  const getContextFromState = (state: DomPlaybackState): ServiceContentContext =>
+    buildContextFromState(state, config);
+
+  const readContext = (): ServiceContentContext => getContextFromState(readPlaybackState());
+
+  let suppressedPlaybackUpdate: SuppressedPlaybackUpdate | null = null;
+
+  const applySuppressedPlaybackUpdate = (context: ServiceContentContext) => {
+    if (isSuppressedPlaybackUpdate(suppressedPlaybackUpdate, context)) {
+      suppressedPlaybackUpdate = null;
+      return true;
+    }
+
+    if (suppressedPlaybackUpdate && context.mediaId !== suppressedPlaybackUpdate.mediaId) {
+      suppressedPlaybackUpdate = null;
+    }
+
+    return false;
   };
 
-  let suppressLocalCommandsUntil = 0;
+  const setSuppressedPlaybackUpdate = (context: ServiceContentContext) => {
+    suppressedPlaybackUpdate = getSuppressedPlaybackUpdate(context);
+  };
 
   return {
     serviceId: config.serviceId,
-    getContext: buildContext,
+    getContext: readContext,
 
     observe(onContext, onPlaybackUpdate) {
       let activeVideo: HTMLVideoElement | null = null;
-      let lastSignature = '';
+      let lastContext: ServiceContentContext | null = null;
+      let stopped = false;
 
       const emitContext = (context: ServiceContentContext) => {
-        const signature = getContextSignature(context);
-        if (signature === lastSignature) return;
-        lastSignature = signature;
+        if (isSameContext(lastContext, context)) return;
+        lastContext = context;
         onContext(context);
       };
 
       const emitPlaybackUpdate = (context: ServiceContentContext) => {
-        if (Date.now() < suppressLocalCommandsUntil) return;
+        if (applySuppressedPlaybackUpdate(context)) return;
         if (!context.playbackReady || !context.mediaId) return;
         onPlaybackUpdate({
           serviceId: config.serviceId,
@@ -164,13 +290,14 @@ export function createDomVideoAdapter(
       };
 
       const handleVideoEvent = () => {
-        const context = buildContext();
+        const state = readPlaybackState();
+        const context = getContextFromState(state);
+        bindActiveVideo(state.video);
         emitContext(context);
         emitPlaybackUpdate(context);
       };
 
-      const bindActiveVideo = () => {
-        const video = getVideo();
+      const bindActiveVideo = (video: HTMLVideoElement | null) => {
         if (video === activeVideo) return;
         if (activeVideo) {
           for (const e of VIDEO_EVENTS) {
@@ -185,20 +312,30 @@ export function createDomVideoAdapter(
         }
       };
 
-      // Coalesce bursts of mutations / URL events into one refresh per frame.
-      let rafId: number | null = null;
       const refresh = () => {
-        if (rafId !== null) return;
-        rafId = requestAnimationFrame(() => {
-          rafId = null;
-          bindActiveVideo();
-          emitContext(buildContext());
+        if (stopped) return;
+        const state = readPlaybackState();
+        bindActiveVideo(state.video);
+        emitContext(getContextFromState(state));
+      };
+
+      // Coalesce synchronous bursts of mutations / URL events into one
+      // microtask so refreshes run promptly without depending on paint or
+      // timer scheduling.
+      let refreshQueued = false;
+      const scheduleRefresh = () => {
+        if (stopped || refreshQueued) return;
+        refreshQueued = true;
+        queueMicrotask(() => {
+          refreshQueued = false;
+          if (stopped) return;
+          refresh();
         });
       };
 
       // SPA re-renders (Netflix, YouTube) swap or reparent the <video>
       // element. Subtree childList catches these regardless of depth.
-      const structureObserver = new MutationObserver(refresh);
+      const structureObserver = new MutationObserver(scheduleRefresh);
       structureObserver.observe(document.documentElement, {
         childList: true,
         subtree: true,
@@ -207,22 +344,21 @@ export function createDomVideoAdapter(
       // Title edits don't always show up as structural changes (a script
       // can just reassign `document.title`), so observe <head> for
       // characterData too. Head is tiny, so this is cheap.
-      const titleObserver = new MutationObserver(refresh);
+      const titleObserver = new MutationObserver(scheduleRefresh);
       titleObserver.observe(document.head, {
         childList: true,
         subtree: true,
         characterData: true,
       });
 
-      const stopObservingUrl = observeUrlChanges(refresh);
+      const stopObservingUrl = observeUrlChanges(scheduleRefresh);
 
-      bindActiveVideo();
-      emitContext(buildContext());
+      refresh();
 
       return () => {
+        stopped = true;
         structureObserver.disconnect();
         titleObserver.disconnect();
-        if (rafId !== null) cancelAnimationFrame(rafId);
         stopObservingUrl();
         if (activeVideo) {
           for (const e of VIDEO_EVENTS) {
@@ -234,53 +370,36 @@ export function createDomVideoAdapter(
     },
 
     async applySnapshot(snapshot: PartySnapshot): Promise<ApplySnapshotResult> {
-      const video = getVideo();
-      const context = buildContext();
+      const state = readPlaybackState();
+      const context = getContextFromState(state);
+      const target = getSnapshotPlaybackTarget(
+        snapshot,
+        context,
+        state.video,
+        config.issueWhenPlayerNotReady,
+      );
 
-      if (!video || !context.playbackReady) {
+      if (!('video' in target)) {
+        return target;
+      }
+
+      syncVideoPosition(target.video, target.targetPositionSec);
+
+      const playbackResult = await syncVideoPlaybackState(
+        target.video,
+        target.shouldPlay,
+      );
+      if (!playbackResult.ok) {
         return {
           applied: false,
-          reason: config.issueWhenPlayerNotReady,
-          context,
+          reason: playbackResult.reason,
+          context: readContext(),
         };
       }
 
-      if (context.mediaId && snapshot.playback.mediaId !== context.mediaId) {
-        return {
-          applied: false,
-          reason: 'Current media does not match the room playback.',
-          context,
-        };
-      }
-
-      suppressLocalCommandsUntil = Date.now() + LOCAL_UPDATE_SUPPRESSION_MS;
-
-      const elapsedSec = snapshot.playback.playing
-        ? Math.max(0, (Date.now() - snapshot.playback.updatedAt) / 1000)
-        : 0;
-      const targetPosition = snapshot.playback.positionSec + elapsedSec;
-
-      if (Math.abs(video.currentTime - targetPosition) > SYNC_DRIFT_THRESHOLD_SEC) {
-        video.currentTime = targetPosition;
-      }
-
-      if (snapshot.playback.playing && video.paused) {
-        try {
-          await video.play();
-        } catch {
-          return {
-            applied: false,
-            reason: 'Browser blocked playback start on this tab.',
-            context: buildContext(),
-          };
-        }
-      }
-
-      if (!snapshot.playback.playing && !video.paused) {
-        video.pause();
-      }
-
-      return { applied: true, context: buildContext() };
+      const appliedContext = readContext();
+      setSuppressedPlaybackUpdate(appliedContext);
+      return { applied: true, context: appliedContext };
     },
   };
 }

@@ -113,7 +113,7 @@ io.on('connection', (socket) => {
     const snapshot = toPartySnapshot(room);
 
     acknowledge({ ok: true, data: snapshot });
-    io.to(room.roomCode).emit('playback:state', snapshot);
+    socket.to(room.roomCode).emit('playback:state', snapshot);
   });
 
   socket.on('presence:update', () => {
