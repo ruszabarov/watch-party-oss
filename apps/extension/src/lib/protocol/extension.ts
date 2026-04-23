@@ -45,14 +45,11 @@ export interface PopupState {
   lastWarning: string | null;
 }
 
-export function createDefaultPopupState(
-  overrides: Partial<PopupState> = {},
-): PopupState {
+export function createDefaultPopupState(): PopupState {
   return {
     settings: {
       serverUrl: DEFAULT_SERVER_URL,
       memberName: 'Guest',
-      ...overrides.settings,
     },
     connectionStatus: 'disconnected',
     room: null,
@@ -63,47 +60,31 @@ export function createDefaultPopupState(
       url: '',
       activeServiceId: null,
       isWatchPage: false,
-      ...overrides.activeTab,
     },
     controlledTabId: null,
     contentContext: null,
     lastError: null,
     lastWarning: null,
-    ...overrides,
   };
 }
 
-export function isPopupState(value: unknown): value is PopupState {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as Partial<PopupState>;
-  const settings = candidate.settings;
-  const activeTab = candidate.activeTab;
-
-  return Boolean(
-    settings &&
-      typeof settings === 'object' &&
-      typeof settings.memberName === 'string' &&
-      typeof settings.serverUrl === 'string' &&
-      activeTab &&
-      typeof activeTab === 'object' &&
-      typeof activeTab.title === 'string' &&
-      typeof activeTab.url === 'string' &&
-      typeof candidate.connectionStatus === 'string',
-  );
+export interface ApplySnapshotResult {
+  applied: boolean;
+  reason?: string;
+  context: ServiceContentContext | null;
 }
 
-export function coercePopupState(
-  value: unknown,
-  fallback: PopupState = createDefaultPopupState(),
-): PopupState {
-  return isPopupState(value) ? value : fallback;
-}
+/** Name of the popup ↔ background port. */
+export const POPUP_PORT_NAME = 'watch-party.popup';
 
-export type RuntimeRequest =
-  | { type: 'party:get-state' }
+/** Name of the content-script ↔ background port (one per tab). */
+export const CONTENT_PORT_NAME = 'watch-party.content';
+
+/**
+ * Commands the popup can issue. Commands are ack/nack over the port;
+ * state updates flow the other way on their own schedule.
+ */
+export type PopupCommand =
   | {
       type: 'settings:update';
       payload: { serverUrl: string; memberName: string };
@@ -113,19 +94,29 @@ export type RuntimeRequest =
   | { type: 'room:leave' }
   | { type: 'room:playback-update'; payload: PlaybackUpdate };
 
-export type ContentMessage =
-  | { type: 'content:context'; payload: ServiceContentContext }
-  | { type: 'content:playback-update'; payload: PlaybackUpdate }
-  | { type: 'content:request-sync' };
+/** Envelope popup → background over the popup port. */
+export type PopupToBackground = {
+  type: 'command';
+  id: number;
+  command: PopupCommand;
+};
 
-export type BackgroundToContentMessage =
-  | { type: 'party:request-context' }
-  | { type: 'party:apply-snapshot'; payload: { snapshot: PartySnapshot } };
+/** Envelope background → popup over the popup port. */
+export type BackgroundToPopup =
+  | { type: 'state'; state: PopupState }
+  | { type: 'ack'; id: number }
+  | { type: 'nack'; id: number; error: string };
 
-export interface ApplySnapshotResult {
-  applied: boolean;
-  reason?: string;
-  context: ServiceContentContext | null;
-}
+/** Envelope content-script → background over the content port. */
+export type ContentToBackground =
+  | { type: 'context'; context: ServiceContentContext }
+  | { type: 'playback-update'; update: PlaybackUpdate }
+  | { type: 'request-sync' }
+  | { type: 'snapshot-reply'; id: number; result: ApplySnapshotResult };
 
-export type BackgroundBroadcast = { type: 'party:state-updated' };
+/** Envelope background → content-script over the content port. */
+export type BackgroundToContent = {
+  type: 'apply-snapshot';
+  id: number;
+  snapshot: PartySnapshot;
+};

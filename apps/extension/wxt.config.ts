@@ -12,6 +12,8 @@ const connectSrc = [
   'ws://localhost:8787',
   'http://127.0.0.1:8787',
   'ws://127.0.0.1:8787',
+  'http://localhost:3000',
+  'ws://localhost:3000',
   'https://*',
   'wss://*',
 ];

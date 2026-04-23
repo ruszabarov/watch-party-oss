@@ -1,13 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
 
-  import type { PlaybackUpdate } from '@watch-party/shared';
   import {
-    coercePopupState,
     createDefaultPopupState,
+    type PopupCommand,
     type PopupState,
-    type RuntimeRequest,
   } from '../../lib/protocol/extension';
+  import { createPopupClient } from '../../lib/protocol/popup-client';
 
   import Header from './ui/Header.svelte';
   import Lobby from './ui/Lobby.svelte';
@@ -15,33 +14,24 @@
   import Settings from './ui/Settings.svelte';
   import Notice from './ui/Notice.svelte';
 
-  const emptyState = createDefaultPopupState();
-  const POPUP_STATE_RETRY_DELAY_MS = 50;
-
-  let popup: PopupState = $state(emptyState);
+  let popup: PopupState = $state(createDefaultPopupState());
   let isBusy = $state(false);
   let settingsOpen = $state(false);
 
-  async function syncState(): Promise<void> {
-    try {
-      popup = await requestPopupState({ type: 'party:get-state' });
-    } catch (error) {
-      popup = { ...popup, lastError: getErrorMessage(error) };
-    }
-  }
+  const client = createPopupClient({
+    onState: (state) => {
+      popup = state;
+    },
+  });
 
-  async function sendRequest(request: RuntimeRequest): Promise<PopupState> {
-    try {
-      return await requestPopupState(request);
-    } catch (error) {
-      return { ...popup, lastError: getErrorMessage(error) };
-    }
-  }
+  onDestroy(() => client.close());
 
-  async function perform(request: RuntimeRequest): Promise<void> {
+  async function perform(command: PopupCommand): Promise<void> {
     isBusy = true;
     try {
-      popup = await sendRequest(request);
+      await client.send(command);
+    } catch (error) {
+      popup = { ...popup, lastError: getErrorMessage(error) };
     } finally {
       isBusy = false;
     }
@@ -57,10 +47,6 @@
 
   function handleLeaveRoom(): void {
     void perform({ type: 'room:leave' });
-  }
-
-  function handlePlaybackUpdate(update: PlaybackUpdate): void {
-    void perform({ type: 'room:playback-update', payload: update });
   }
 
   function handleSaveSettings(next: PopupState['settings']): void {
@@ -89,35 +75,6 @@
   function closeSettings(): void {
     settingsOpen = false;
   }
-
-  async function requestPopupState(request: RuntimeRequest): Promise<PopupState> {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await browser.runtime.sendMessage(request);
-      if (attempt === 1 || response != null) {
-        return coercePopupState(response, popup);
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, POPUP_STATE_RETRY_DELAY_MS));
-    }
-
-    return popup;
-  }
-
-  onMount(() => {
-    void syncState();
-
-    const listener = (message: { type?: string }) => {
-      if (message?.type === 'party:state-updated') {
-        void syncState();
-      }
-    };
-
-    browser.runtime.onMessage.addListener(listener);
-
-    return () => {
-      browser.runtime.onMessage.removeListener(listener);
-    };
-  });
 </script>
 
 <div class="flex flex-col overflow-hidden bg-stone-50 text-stone-900">
@@ -143,7 +100,6 @@
             popup={popup}
             {isBusy}
             onLeave={handleLeaveRoom}
-            onPlaybackUpdate={handlePlaybackUpdate}
           />
         {:else}
           <Lobby

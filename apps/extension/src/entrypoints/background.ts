@@ -2,6 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 
 import {
   type ClientToServerEvents,
+  type OperationResult,
   resolvePlaybackState,
   type PartySnapshot,
   type PlaybackUpdate,
@@ -13,19 +14,18 @@ import {
 import {
   DEFAULT_SERVER_URL,
   type ActiveTabSummary,
-  type ApplySnapshotResult,
-  type BackgroundBroadcast,
-  type ContentMessage,
+  type PopupCommand,
   type PopupState,
-  type RuntimeRequest,
   type ServiceContentContext,
 } from '../lib/protocol/extension';
+import {
+  registerContentPortHandlers,
+  type ContentPortRegistry,
+} from '../lib/protocol/content-port';
+import { registerPopupPortHandlers } from '../lib/protocol/popup-port';
 import { findPluginByUrl, getPlugin } from '../lib/services/registry';
 import type { ServicePlugin } from '../lib/services/types';
 
-type MessageSender = Parameters<
-  Parameters<typeof browser.runtime.onMessage.addListener>[0]
->[1];
 type BrowserTab = Parameters<Parameters<typeof browser.tabs.onUpdated.addListener>[0]>[2];
 
 type SessionInfo = {
@@ -48,7 +48,6 @@ const SETTINGS_KEY = 'watch-party-settings';
 
 let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 let currentSocketUrl: string | null = null;
-let hasRegisteredEventHandlers = false;
 
 const state: InternalState = {
   settings: {
@@ -74,119 +73,144 @@ const state: InternalState = {
 
 const contentContexts = new Map<number, ServiceContentContext>();
 
-export default defineBackground(async () => {
-  registerEventHandlers();
-  await hydrateState();
-  await refreshActiveTab();
-  await connectForStoredSession();
-});
+// Installed synchronously in main() so the listener is active before Chrome
+// delivers the connect/tab events that woke the service worker.
+let popupPorts: ReturnType<typeof registerPopupPortHandlers>;
+let contentPorts: ContentPortRegistry;
 
-function registerEventHandlers(): void {
-  if (hasRegisteredEventHandlers) {
-    return;
-  }
+export default defineBackground(() => {
+  popupPorts = registerPopupPortHandlers({
+    getState: buildPopupState,
+    handleCommand: handlePopupCommand,
+  });
 
-  hasRegisteredEventHandlers = true;
-
-  browser.runtime.onMessage.addListener((message: RuntimeRequest | ContentMessage, sender) => {
-    return handleMessage(message, sender).catch((error) => {
-      state.lastError = getErrorMessage(error);
-      emitStateChanged();
-      return buildPopupState();
-    });
+  contentPorts = registerContentPortHandlers({
+    onContext: handleContentContext,
+    onPlaybackUpdate: handleContentPlaybackUpdate,
+    onRequestSync: handleContentRequestSync,
+    onDisconnect: handleContentDisconnect,
   });
 
   browser.tabs.onActivated.addListener(async () => {
     await refreshActiveTab();
   });
 
-  browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  browser.tabs.onUpdated.addListener(async (_tabId, changeInfo) => {
+    // If the controlled tab navigates off-service, its content script unloads
+    // and its port disconnects — handleContentDisconnect takes it from there.
     if (changeInfo.status === 'complete' || changeInfo.url) {
       await refreshActiveTab();
     }
-
-    if (tabId === state.controlledTabId && tab.url) {
-      const sessionPlugin = state.session ? getPlugin(state.session.serviceId) : null;
-      if (sessionPlugin && !sessionPlugin.matchesService(tab.url)) {
-        state.lastWarning = `The controlled tab left ${sessionPlugin.descriptor.label}.`;
-        emitStateChanged();
-      }
-    }
   });
 
-  browser.tabs.onRemoved.addListener((tabId) => {
-    contentContexts.delete(tabId);
+  void (async () => {
+    await hydrateState();
+    await refreshActiveTab();
+    await connectForStoredSession();
+  })();
+});
 
-    if (state.controlledTabId === tabId) {
-      const sessionPlugin = state.session ? getPlugin(state.session.serviceId) : null;
-      state.controlledTabId = null;
-      state.contentContext = null;
-      state.lastWarning = sessionPlugin
-        ? `The controlled ${sessionPlugin.descriptor.label} tab was closed.`
-        : 'The controlled tab was closed.';
-      emitStateChanged();
-    }
-  });
-}
+// ---------------------------------------------------------------------------
+// Popup command handling
+// ---------------------------------------------------------------------------
 
-async function handleMessage(
-  message: RuntimeRequest | ContentMessage,
-  sender: MessageSender,
-): Promise<unknown> {
-  switch (message.type) {
-    case 'party:get-state':
-      await refreshActiveTab(false);
-      return buildPopupState();
+async function handlePopupCommand(command: PopupCommand): Promise<void> {
+  switch (command.type) {
     case 'settings:update':
       state.settings = {
-        serverUrl: normalizeServerUrl(message.payload.serverUrl),
-        memberName: normalizeMemberName(message.payload.memberName),
+        serverUrl: normalizeServerUrl(command.payload.serverUrl),
+        memberName: normalizeMemberName(command.payload.memberName),
       };
       await persistState();
       emitStateChanged();
-      return buildPopupState();
+      return;
+
     case 'room:create':
       await refreshActiveTab(false);
-      return createRoom();
+      try {
+        await createRoom();
+      } catch (error) {
+        state.lastError = getErrorMessage(error);
+        emitStateChanged();
+        throw error;
+      }
+      return;
+
     case 'room:join':
       await refreshActiveTab(false);
-      return joinRoom(message.payload.roomCode);
+      try {
+        await joinRoom(command.payload.roomCode);
+      } catch (error) {
+        state.lastError = getErrorMessage(error);
+        emitStateChanged();
+        throw error;
+      }
+      return;
+
     case 'room:leave':
-      return leaveRoom();
+      await leaveRoom();
+      return;
+
     case 'room:playback-update':
-      return sendPlaybackUpdate(message.payload);
-    case 'content:context':
-      if (sender.tab?.id != null) {
-        contentContexts.set(sender.tab.id, message.payload);
-
-        if (state.controlledTabId === sender.tab.id) {
-          state.contentContext = message.payload;
-        }
-
-        if (state.activeTab.tabId === sender.tab.id) {
-          state.contentContext = message.payload;
-        }
-      }
-
-      emitStateChanged();
-      return { ok: true };
-    case 'content:playback-update':
-      if (sender.tab?.id !== state.controlledTabId) {
-        return { ok: false };
-      }
-
-      return sendPlaybackUpdate(message.payload, true);
-    case 'content:request-sync':
-      if (sender.tab?.id != null && state.room) {
-        state.controlledTabId ??= sender.tab.id;
-        await applySnapshotToControlledTab();
-      }
-
-      return { ok: true };
-    default:
-      return undefined;
+      await sendPlaybackUpdate(command.payload);
+      return;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Content-script event handling
+// ---------------------------------------------------------------------------
+
+function handleContentContext(tabId: number, context: ServiceContentContext): void {
+  contentContexts.set(tabId, context);
+
+  // Only visible state is `state.contentContext`, which mirrors the active or
+  // controlled tab. Pushes from background tabs don't affect the popup UI.
+  if (tabId !== state.controlledTabId && tabId !== state.activeTab.tabId) {
+    return;
+  }
+
+  state.contentContext = context;
+  emitStateChanged();
+}
+
+function handleContentPlaybackUpdate(tabId: number, update: PlaybackUpdate): void {
+  if (tabId !== state.controlledTabId) return;
+  void sendPlaybackUpdate(update, true).catch((error) => {
+    state.lastError = getErrorMessage(error);
+    emitStateChanged();
+  });
+}
+
+function handleContentRequestSync(tabId: number): void {
+  if (!state.room) return;
+  state.controlledTabId ??= tabId;
+  void applySnapshotToControlledTab();
+}
+
+function handleContentDisconnect(tabId: number): void {
+  contentContexts.delete(tabId);
+
+  const wasControlled = state.controlledTabId === tabId;
+  const wasActive = state.activeTab.tabId === tabId;
+
+  if (wasControlled) {
+    const sessionPlugin = state.session ? getPlugin(state.session.serviceId) : null;
+    state.controlledTabId = null;
+    state.lastWarning = sessionPlugin
+      ? `Lost the controlled ${sessionPlugin.descriptor.label} tab.`
+      : 'Lost the controlled tab.';
+  }
+
+  if (wasControlled || wasActive) {
+    state.contentContext = null;
+    emitStateChanged();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// State hydration and tab bookkeeping
+// ---------------------------------------------------------------------------
 
 async function hydrateState(): Promise<void> {
   const stored = (await browser.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY] as
@@ -249,64 +273,47 @@ async function refreshActiveTab(notify = true): Promise<void> {
   if (!activeTab?.id) {
     state.activeTab = createEmptyActiveTabSummary();
     state.contentContext = null;
-    if (notify) {
-      emitStateChanged();
-    }
+    if (notify) emitStateChanged();
     return;
   }
 
   state.activeTab = summarizeTab(activeTab);
   state.contentContext = contentContexts.get(activeTab.id) ?? null;
 
-  if (state.activeTab.activeServiceId) {
-    try {
-      const contentContext = (await browser.tabs.sendMessage(activeTab.id, {
-        type: 'party:request-context',
-      })) as ServiceContentContext;
-
-      state.contentContext = contentContext;
-      contentContexts.set(activeTab.id, contentContext);
-    } catch {
-      // Content script may not be ready yet.
-    }
-  }
-
-  if (notify) {
-    emitStateChanged();
-  }
+  if (notify) emitStateChanged();
 }
 
-async function createRoom(): Promise<PopupState> {
-  const { context: contentContext } = await requireControllableWatchTab();
-  const memberId = state.session?.memberId ?? browser.runtime.id + ':' + crypto.randomUUID();
+// ---------------------------------------------------------------------------
+// Room lifecycle
+// ---------------------------------------------------------------------------
+
+async function createRoom(): Promise<void> {
+  const { context } = requireControllableWatchTab();
 
   const response = await emitWithAck<RoomResponse>('room:create', {
-    memberId,
+    memberId: ensureMemberId(),
     memberName: state.settings.memberName,
-    serviceId: contentContext.serviceId,
+    serviceId: context.serviceId,
     initialPlayback: {
-      serviceId: contentContext.serviceId,
-      mediaId: contentContext.mediaId!,
-      title: contentContext.mediaTitle,
-      playing: contentContext.playing,
-      positionSec: contentContext.positionSec,
+      serviceId: context.serviceId,
+      mediaId: context.mediaId,
+      title: context.mediaTitle,
+      playing: context.playing,
+      positionSec: context.positionSec,
     },
   });
 
   state.controlledTabId = state.activeTab.tabId;
   applyRoomResponse(response);
   await applySnapshotToControlledTab();
-
-  return buildPopupState();
 }
 
-async function joinRoom(roomCode: string): Promise<PopupState> {
-  const { context } = await requireControllableWatchTab();
-  const memberId = state.session?.memberId ?? browser.runtime.id + ':' + crypto.randomUUID();
+async function joinRoom(roomCode: string): Promise<void> {
+  const { context } = requireControllableWatchTab();
 
   const response = await emitWithAck<RoomResponse>('room:join', {
     roomCode: roomCode.trim().toUpperCase(),
-    memberId,
+    memberId: ensureMemberId(),
     memberName: state.settings.memberName,
     serviceId: context.serviceId,
   });
@@ -314,11 +321,9 @@ async function joinRoom(roomCode: string): Promise<PopupState> {
   state.controlledTabId = state.activeTab.tabId;
   applyRoomResponse(response);
   await applySnapshotToControlledTab();
-
-  return buildPopupState();
 }
 
-async function leaveRoom(): Promise<PopupState> {
+async function leaveRoom(): Promise<void> {
   if (state.session && socket) {
     try {
       await emitWithAck('room:leave', {
@@ -326,7 +331,7 @@ async function leaveRoom(): Promise<PopupState> {
         memberId: state.session.memberId,
       });
     } catch {
-      // Best effort.
+      // Best effort — we tear down the local session regardless.
     }
   }
 
@@ -341,18 +346,14 @@ async function leaveRoom(): Promise<PopupState> {
   state.lastWarning = null;
   await persistState();
   emitStateChanged();
-
-  return buildPopupState();
 }
 
 async function sendPlaybackUpdate(
   update: PlaybackUpdate,
   isLocalRelay = false,
-): Promise<PopupState | { ok: false }> {
+): Promise<void> {
   if (!state.session) {
-    if (isLocalRelay) {
-      return { ok: false };
-    }
+    if (isLocalRelay) return;
     throw new Error('Join or create a room first.');
   }
 
@@ -360,7 +361,7 @@ async function sendPlaybackUpdate(
   if (playbackContext?.mediaId && playbackContext.mediaId !== update.mediaId) {
     state.lastWarning = 'Local title no longer matches the active room.';
     emitStateChanged();
-    return buildPopupState();
+    return;
   }
 
   await emitWithAck<PartySnapshot>('playback:update', {
@@ -369,19 +370,25 @@ async function sendPlaybackUpdate(
     update,
   });
 
-  if (!isLocalRelay) {
-    emitStateChanged();
-  }
-
-  return buildPopupState();
+  if (!isLocalRelay) emitStateChanged();
 }
+
+/**
+ * A `ServiceContentContext` that has cleared every precondition required to
+ * drive room playback: the page is playable, `mediaId` is known, and the
+ * service matches the active tab.
+ */
+type ReadyServiceContentContext = ServiceContentContext & {
+  playbackReady: true;
+  mediaId: string;
+};
 
 interface ControllableWatchTab {
   plugin: ServicePlugin;
-  context: ServiceContentContext;
+  context: ReadyServiceContentContext;
 }
 
-async function requireControllableWatchTab(): Promise<ControllableWatchTab> {
+function requireControllableWatchTab(): ControllableWatchTab {
   if (!state.activeTab.tabId || !state.activeTab.isWatchPage) {
     throw new Error('Open a supported watch page before starting a party.');
   }
@@ -400,8 +407,16 @@ async function requireControllableWatchTab(): Promise<ControllableWatchTab> {
     throw new Error('Active tab and reported service disagree. Refresh the tab.');
   }
 
-  return { plugin, context };
+  return { plugin, context: context };
 }
+
+function ensureMemberId(): string {
+  return state.session?.memberId ?? `${browser.runtime.id}:${crypto.randomUUID()}`;
+}
+
+// ---------------------------------------------------------------------------
+// Socket lifecycle
+// ---------------------------------------------------------------------------
 
 async function ensureSocket(): Promise<void> {
   const serverUrl = normalizeServerUrl(state.settings.serverUrl);
@@ -510,23 +525,24 @@ async function applySnapshotToControlledTab(): Promise<void> {
 
   const sessionPlugin = state.session ? getPlugin(state.session.serviceId) : null;
 
-  try {
-    const result = (await browser.tabs.sendMessage(state.controlledTabId, {
-      type: 'party:apply-snapshot',
-      payload: { snapshot: state.room },
-    })) as ApplySnapshotResult;
+  const result = await contentPorts.applySnapshot(
+    state.controlledTabId,
+    state.room,
+  );
 
-    if (result.context) {
-      contentContexts.set(state.controlledTabId, result.context);
-      state.contentContext = result.context;
-    }
-
-    state.lastWarning = result.applied ? null : result.reason ?? 'Sync was skipped.';
-  } catch {
+  if (!result) {
     state.lastWarning = sessionPlugin
       ? `${sessionPlugin.descriptor.label} tab is not ready for sync yet.`
       : 'Controlled tab is not ready for sync yet.';
+    return;
   }
+
+  if (result.context) {
+    contentContexts.set(state.controlledTabId, result.context);
+    state.contentContext = result.context;
+  }
+
+  state.lastWarning = result.applied ? null : result.reason ?? 'Sync was skipped.';
 }
 
 function applyRoomResponse(response: RoomResponse): void {
@@ -542,6 +558,10 @@ function applyRoomResponse(response: RoomResponse): void {
   void persistState();
   emitStateChanged();
 }
+
+// ---------------------------------------------------------------------------
+// State assembly
+// ---------------------------------------------------------------------------
 
 function buildPopupState(): PopupState {
   return {
@@ -563,35 +583,55 @@ function buildPopupState(): PopupState {
 }
 
 function emitStateChanged(): void {
-  const message: BackgroundBroadcast = { type: 'party:state-updated' };
-  void browser.runtime.sendMessage(message).catch(() => undefined);
+  popupPorts.broadcastState(buildPopupState());
 }
 
+/**
+ * Emit an event to the socket.io server and await its ack.
+ *
+ * Typed on top of socket.io's generic `emit` — the typed `Socket.emit`
+ * signature cannot express our "payload then ack callback" shape, hence the
+ * narrow cast to a plain `emit(name, body, ack)` function.
+ */
 async function emitWithAck<T>(
   eventName: keyof ClientToServerEvents,
   payload: unknown,
 ): Promise<T> {
   await ensureSocket();
 
+  const activeSocket = socket;
+  if (!activeSocket) {
+    throw new Error('Realtime connection unavailable.');
+  }
+
+  type UntypedEmit = (
+    name: string,
+    body: unknown,
+    ack: (response: OperationResult<T>) => void,
+  ) => void;
+
   return new Promise<T>((resolve, reject) => {
-    const activeSocket = socket as unknown as {
-      emit: (
-        name: string,
-        body: unknown,
-        callback: (response: { ok: boolean; data?: T; error?: string }) => void,
-      ) => void;
-    } | null;
-
-    activeSocket?.emit(eventName, payload, (response) => {
-      if (!response.ok || response.data == null) {
-        reject(new Error(response.error ?? 'Unknown server error.'));
-        return;
-      }
-
-      resolve(response.data);
-    });
+    (activeSocket.emit as unknown as UntypedEmit)(
+      eventName,
+      payload,
+      (response) => {
+        if (!response.ok) {
+          reject(new Error(response.error));
+          return;
+        }
+        if (response.data == null) {
+          reject(new Error('Server returned an empty payload.'));
+          return;
+        }
+        resolve(response.data);
+      },
+    );
   });
 }
+
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
 
 function summarizeTab(tab: BrowserTab): ActiveTabSummary {
   const url = tab.url ?? '';
