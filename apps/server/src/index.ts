@@ -1,29 +1,11 @@
 import http from 'node:http';
 import { Server } from 'socket.io';
-import {
-  applyPlaybackUpdate,
-  createRoomCode,
-  createRoomState,
-  normalizeRoomCode,
-  roomHasMember,
-  type ClientToServerEvents,
-  type RoomState,
-  type ServerToClientEvents,
-  toPartySnapshot,
-  upsertRoomMember,
-  removeRoomMember,
-} from '@watch-party/shared';
+import type { ClientToServerEvents, ServerToClientEvents } from '@watch-party/shared';
 
-type SessionRecord = {
-  socketId: string;
-  roomCode: string;
-  memberId: string;
-};
+import { createRealtimeState, registerSocketHandlers } from './socket-handlers';
 
 const port = Number.parseInt(process.env['PORT'] ?? '8787', 10);
-const rooms = new Map<string, RoomState>();
-const sessionsBySocket = new Map<string, SessionRecord>();
-const activeSocketByMember = new Map<string, string>();
+const state = createRealtimeState();
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
@@ -43,169 +25,8 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
   transports: ['websocket'],
 });
 
-io.on('connection', (socket) => {
-  socket.on('room:create', (payload, acknowledge) => {
-    let room: RoomState;
-
-    try {
-      const roomCode = getUniqueRoomCode();
-      room = createRoomState(roomCode, payload);
-    } catch (error) {
-      acknowledge({
-        ok: false,
-        error: error instanceof Error ? error.message : 'Room creation failed.',
-      });
-      return;
-    }
-
-    upsertRoomMember(room, payload.memberId, payload.memberName);
-    rooms.set(room.roomCode, room);
-
-    bindMemberToSocket(socket.id, room.roomCode, payload.memberId);
-    socket.join(room.roomCode);
-
-    const snapshot = toPartySnapshot(room);
-    acknowledge({ ok: true, data: { memberId: payload.memberId, snapshot } });
-    io.to(room.roomCode).emit('room:state', snapshot);
-  });
-
-  socket.on('room:join', (payload, acknowledge) => {
-    const roomCode = normalizeRoomCode(payload.roomCode);
-    const room = rooms.get(roomCode);
-
-    if (!room) {
-      acknowledge({ ok: false, error: 'Room not found.' });
-      return;
-    }
-
-    if (payload.serviceId && room.serviceId !== payload.serviceId) {
-      acknowledge({ ok: false, error: 'This room is using a different service.' });
-      return;
-    }
-
-    upsertRoomMember(room, payload.memberId, payload.memberName);
-
-    bindMemberToSocket(socket.id, roomCode, payload.memberId);
-    socket.join(roomCode);
-
-    const snapshot = toPartySnapshot(room);
-    acknowledge({ ok: true, data: { memberId: payload.memberId, snapshot } });
-    io.to(roomCode).emit('room:state', snapshot);
-  });
-
-  socket.on('room:leave', (payload, acknowledge) => {
-    removeSocketSession(socket.id);
-    leaveRoom(payload.roomCode, payload.memberId);
-    acknowledge({
-      ok: true,
-      data: { roomCode: normalizeRoomCode(payload.roomCode) },
-    });
-  });
-
-  socket.on('playback:update', (payload, acknowledge) => {
-    const room = rooms.get(normalizeRoomCode(payload.roomCode));
-
-    if (!room) {
-      acknowledge({ ok: false, error: 'Room not found.' });
-      return;
-    }
-
-    if (!roomHasMember(room, payload.memberId)) {
-      acknowledge({ ok: false, error: 'Member is not part of this room.' });
-      return;
-    }
-
-    if (payload.update.serviceId !== room.serviceId) {
-      acknowledge({ ok: false, error: 'Service mismatch.' });
-      return;
-    }
-
-    try {
-      applyPlaybackUpdate(room, payload.update, payload.memberId);
-    } catch (error) {
-      acknowledge({
-        ok: false,
-        error: error instanceof Error ? error.message : 'Playback update failed.',
-      });
-      return;
-    }
-    const snapshot = toPartySnapshot(room);
-
-    acknowledge({ ok: true, data: snapshot });
-    socket.to(room.roomCode).emit('playback:state', snapshot);
-  });
-
-  socket.on('disconnect', () => {
-    const session = sessionsBySocket.get(socket.id);
-    if (!session) {
-      return;
-    }
-
-    const activeSocketId = activeSocketByMember.get(memberKey(session.roomCode, session.memberId));
-    if (activeSocketId !== socket.id) {
-      sessionsBySocket.delete(socket.id);
-      return;
-    }
-
-    removeSocketSession(socket.id);
-    leaveRoom(session.roomCode, session.memberId);
-  });
-});
+registerSocketHandlers(io, state);
 
 server.listen(port, () => {
   console.log(`watch-party realtime server listening on :${port}`);
 });
-
-function getUniqueRoomCode(): string {
-  let roomCode = createRoomCode();
-
-  while (rooms.has(roomCode)) {
-    roomCode = createRoomCode();
-  }
-
-  return roomCode;
-}
-
-function bindMemberToSocket(socketId: string, roomCode: string, memberId: string): void {
-  const key = memberKey(roomCode, memberId);
-  const priorSocketId = activeSocketByMember.get(key);
-
-  if (priorSocketId && priorSocketId !== socketId) {
-    sessionsBySocket.delete(priorSocketId);
-  }
-
-  activeSocketByMember.set(key, socketId);
-  sessionsBySocket.set(socketId, { socketId, roomCode, memberId });
-}
-
-function removeSocketSession(socketId: string): void {
-  const session = sessionsBySocket.get(socketId);
-  if (!session) {
-    return;
-  }
-
-  activeSocketByMember.delete(memberKey(session.roomCode, session.memberId));
-  sessionsBySocket.delete(socketId);
-}
-
-function leaveRoom(roomCodeValue: string, memberId: string): void {
-  const roomCode = normalizeRoomCode(roomCodeValue);
-  const room = rooms.get(roomCode);
-
-  if (!room) {
-    return;
-  }
-
-  removeRoomMember(room, memberId);
-
-  if (room.members.size === 0) {
-    rooms.delete(roomCode);
-    return;
-  }
-
-  io.to(roomCode).emit('room:state', toPartySnapshot(room));
-}
-
-function memberKey(roomCode: string, memberId: string): string {
-  return `${roomCode}:${memberId}`;
-}

@@ -1,4 +1,4 @@
-import type { ServiceId } from '@watch-party/shared';
+import { sanitizeMemberName, type ServiceId } from '@watch-party/shared';
 
 import {
   DEFAULT_SERVER_URL,
@@ -69,7 +69,7 @@ export function normalizeServerUrl(value: string): string {
 }
 
 export function normalizeMemberName(value: string): string {
-  return value.trim() || createGuestName();
+  return sanitizeMemberName(value);
 }
 
 export function createGuestName(): string {

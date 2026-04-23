@@ -1,5 +1,11 @@
 import { io, type Socket } from 'socket.io-client';
-import { normalizeRoomCode } from '@watch-party/shared';
+import {
+  createRoomRequestSchema,
+  joinRoomRequestSchema,
+  leaveRoomRequestSchema,
+  normalizeRoomCode,
+  playbackUpdateRequestSchema,
+} from '@watch-party/shared';
 
 import type {
   ClientToServerEvents,
@@ -279,7 +285,9 @@ export class PartySessionService {
     if (!activeSocket) {
       throw new Error('Realtime connection unavailable.');
     }
-    const response = await activeSocket.timeout(5_000).emitWithAck('room:create', payload);
+    const response = await activeSocket
+      .timeout(5_000)
+      .emitWithAck('room:create', this.validateOutboundPayload(createRoomRequestSchema, payload));
     return this.unwrapAckResponse(response);
   }
 
@@ -289,7 +297,9 @@ export class PartySessionService {
     if (!activeSocket) {
       throw new Error('Realtime connection unavailable.');
     }
-    const response = await activeSocket.timeout(5_000).emitWithAck('room:join', payload);
+    const response = await activeSocket
+      .timeout(5_000)
+      .emitWithAck('room:join', this.validateOutboundPayload(joinRoomRequestSchema, payload));
     return this.unwrapAckResponse(response);
   }
 
@@ -301,7 +311,9 @@ export class PartySessionService {
     if (!activeSocket) {
       throw new Error('Realtime connection unavailable.');
     }
-    const response = await activeSocket.timeout(5_000).emitWithAck('room:leave', payload);
+    const response = await activeSocket
+      .timeout(5_000)
+      .emitWithAck('room:leave', this.validateOutboundPayload(leaveRoomRequestSchema, payload));
     return this.unwrapAckResponse(response);
   }
 
@@ -315,7 +327,10 @@ export class PartySessionService {
     }
     const response = await activeSocket
       .timeout(5_000)
-      .emitWithAck('playback:update', payload);
+      .emitWithAck(
+        'playback:update',
+        this.validateOutboundPayload(playbackUpdateRequestSchema, payload),
+      );
     return this.unwrapAckResponse(response);
   }
 
@@ -329,4 +344,19 @@ export class PartySessionService {
 
     return response.data;
   }
+
+  private validateOutboundPayload<T>(schema: ZodSchemaLike<T>, payload: unknown): T {
+    const result = schema.safeParse(payload);
+    if (!result.success) {
+      throw new Error('Invalid request payload.');
+    }
+
+    return result.data;
+  }
 }
+
+type ZodSchemaLike<T> = {
+  safeParse(payload: unknown):
+    | { success: true; data: T }
+    | { success: false };
+};

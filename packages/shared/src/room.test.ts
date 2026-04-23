@@ -3,9 +3,15 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCanonicalWatchUrl,
   applyPlaybackUpdate,
+  createRoomRequestSchema,
   createRoomState,
+  joinRoomRequestSchema,
+  MAX_MEMBER_NAME_LENGTH,
+  MAX_TITLE_LENGTH,
+  playbackUpdateRequestSchema,
   normalizeRoomCode,
   resolvePlaybackState,
+  sanitizeMemberName,
   toPartySnapshot,
   upsertRoomMember,
 } from './index';
@@ -187,6 +193,81 @@ describe('room reducer', () => {
 
     expect(toPartySnapshot(room).watchUrl).toBe(
       'https://www.youtube.com/watch?v=next456',
+    );
+  });
+
+  it('sanitizes member names before storing them in the room', () => {
+    const room = createRoomState('ROOM06', {
+      memberId: 'member-a',
+      memberName: 'Member A',
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: 'abc123',
+        title: 'Clip',
+        positionSec: 4,
+        playing: true,
+      },
+    });
+
+    upsertRoomMember(room, 'member-b', '\n  Member\tB\u0000  ');
+
+    expect(room.members.get('member-b')?.name).toBe('MemberB');
+  });
+});
+
+describe('protocol schemas', () => {
+  it('normalizes room create payloads', () => {
+    const payload = createRoomRequestSchema.parse({
+      memberId: ' member-a ',
+      memberName: ` ${'A'.repeat(MAX_MEMBER_NAME_LENGTH + 10)} \u0000`,
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: ' abc123 ',
+        title: `  ${'T'.repeat(MAX_TITLE_LENGTH + 20)}  `,
+        playing: true,
+        positionSec: 3.25,
+      },
+    });
+
+    expect(payload.memberId).toBe('member-a');
+    expect(payload.memberName).toBe('A'.repeat(MAX_MEMBER_NAME_LENGTH));
+    expect(payload.initialPlayback.mediaId).toBe('abc123');
+    expect(payload.initialPlayback.title).toBe('T'.repeat(MAX_TITLE_LENGTH));
+  });
+
+  it('normalizes join requests and falls back blank member names to Guest', () => {
+    const payload = joinRoomRequestSchema.parse({
+      roomCode: ' ab12cd ',
+      memberId: 'member-a',
+      memberName: '\u0000\t ',
+    });
+
+    expect(payload.roomCode).toBe('AB12CD');
+    expect(payload.memberName).toBe('Guest');
+  });
+
+  it('rejects malformed playback updates', () => {
+    const result = playbackUpdateRequestSchema.safeParse({
+      roomCode: 'AB12CD',
+      memberId: 'member-a',
+      update: {
+        serviceId: 'youtube',
+        mediaId: 'abc123',
+        playing: true,
+        positionSec: Number.POSITIVE_INFINITY,
+        issuedAt: 1_000,
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('sanitizes member names consistently', () => {
+    expect(sanitizeMemberName('\u0000 \n ')).toBe('Guest');
+    expect(sanitizeMemberName(` ${'B'.repeat(MAX_MEMBER_NAME_LENGTH + 5)} `)).toBe(
+      'B'.repeat(MAX_MEMBER_NAME_LENGTH),
     );
   });
 });

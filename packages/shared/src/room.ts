@@ -6,6 +6,7 @@ import type {
   PlaybackUpdate,
   ServiceId,
 } from './protocol';
+import { sanitizeMemberName, sanitizeOptionalTitle } from './protocol';
 import { buildCanonicalWatchUrl } from './services';
 
 export interface RoomState {
@@ -48,6 +49,7 @@ export function createRoomState(
   const sequence = 1;
   const playback: PlaybackState = {
     ...request.initialPlayback,
+    title: sanitizeOptionalTitle(request.initialPlayback.title),
     updatedAt: now,
     sourceMemberId: request.memberId,
     sequence,
@@ -72,7 +74,7 @@ export function upsertRoomMember(
   const existing = room.members.get(memberId);
   const nextMember: PartyMember = {
     id: memberId,
-    name: memberName.trim() || 'Guest',
+    name: sanitizeMemberName(memberName),
     joinedAt: existing?.joinedAt ?? now,
   };
 
@@ -108,7 +110,7 @@ export function applyPlaybackUpdate(
   };
 
   if (update.title !== undefined) {
-    playback.title = update.title;
+    playback.title = sanitizeOptionalTitle(update.title);
   }
 
   room.playback = playback;
