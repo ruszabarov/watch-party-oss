@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ServiceId } from '@watch-party/shared';
   import {
-    SERVICE_REGISTRY,
+    SUPPORTED_SERVICE_DESCRIPTORS,
     getServiceDescriptor,
   } from '../../../lib/services/registry';
 
@@ -13,7 +13,7 @@
   const { serviceId = null, size = 'md' }: Props = $props();
 
   const descriptor = $derived(
-    getServiceDescriptor(serviceId) ?? SERVICE_REGISTRY.netflix,
+    getServiceDescriptor(serviceId) ?? SUPPORTED_SERVICE_DESCRIPTORS[0],
   );
 </script>
 

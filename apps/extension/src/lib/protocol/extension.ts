@@ -14,8 +14,8 @@ export interface ActiveTabSummary {
   tabId: number | null;
   title: string;
   url: string;
-  isNetflix: boolean;
-  isNetflixWatchPage: boolean;
+  activeServiceId: ServiceId | null;
+  isWatchPage: boolean;
 }
 
 export interface ServiceContentContext {
@@ -61,8 +61,8 @@ export function createDefaultPopupState(
       tabId: null,
       title: '',
       url: '',
-      isNetflix: false,
-      isNetflixWatchPage: false,
+      activeServiceId: null,
+      isWatchPage: false,
       ...overrides.activeTab,
     },
     controlledTabId: null,

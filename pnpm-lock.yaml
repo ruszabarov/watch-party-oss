@@ -67,6 +67,8 @@ importers:
         specifier: ^4.8.3
         version: 4.8.3
 
+  apps/test-service: {}
+
   packages/shared: {}
 
 packages:

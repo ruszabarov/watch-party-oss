@@ -6,6 +6,19 @@ Open-source watch party stack built as a pnpm workspace:
 - `apps/server`: Socket.IO realtime backend with in-memory room state
 - `packages/shared`: shared protocol types and room logic
 
+## Supported services
+
+| Service | Watch URL pattern |
+| --- | --- |
+| Netflix | `netflix.com/watch/...` |
+| YouTube | `youtube.com/watch?v=...`, `youtu.be/...`, `youtube.com/embed/...`, `youtube.com/live/...` |
+
+Adding a service is a self-contained change: drop a `ServicePlugin` under
+`apps/extension/src/lib/services/<id>.ts`, add a one-line
+`createServiceContentScript(MY_SERVICE)` entrypoint, register the plugin in
+`SERVICE_PLUGINS`, and append its origin to `host_permissions` in
+`apps/extension/wxt.config.ts`.
+
 ## Commands
 
 ```bash

@@ -7,6 +7,7 @@ import {
   type PlaybackUpdate,
   type RoomResponse,
   type ServerToClientEvents,
+  type ServiceId,
 } from '@watch-party/shared';
 
 import {
@@ -19,6 +20,8 @@ import {
   type RuntimeRequest,
   type ServiceContentContext,
 } from '../lib/protocol/extension';
+import { findPluginByUrl, getPlugin } from '../lib/services/registry';
+import type { ServicePlugin } from '../lib/services/types';
 
 type MessageSender = Parameters<
   Parameters<typeof browser.runtime.onMessage.addListener>[0]
@@ -28,7 +31,7 @@ type BrowserTab = Parameters<Parameters<typeof browser.tabs.onUpdated.addListene
 type SessionInfo = {
   roomCode: string;
   memberId: string;
-  serviceId: 'netflix';
+  serviceId: ServiceId;
 };
 
 type StoredSettings = {
@@ -59,8 +62,8 @@ const state: InternalState = {
     tabId: null,
     title: '',
     url: '',
-    isNetflix: false,
-    isNetflixWatchPage: false,
+    activeServiceId: null,
+    isWatchPage: false,
   },
   controlledTabId: null,
   contentContext: null,
@@ -102,9 +105,12 @@ function registerEventHandlers(): void {
       await refreshActiveTab();
     }
 
-    if (tabId === state.controlledTabId && tab.url && !isNetflixUrl(tab.url)) {
-      state.lastWarning = 'The controlled tab is no longer on Netflix.';
-      emitStateChanged();
+    if (tabId === state.controlledTabId && tab.url) {
+      const sessionPlugin = state.session ? getPlugin(state.session.serviceId) : null;
+      if (sessionPlugin && !sessionPlugin.matchesService(tab.url)) {
+        state.lastWarning = `The controlled tab left ${sessionPlugin.descriptor.label}.`;
+        emitStateChanged();
+      }
     }
   });
 
@@ -112,9 +118,12 @@ function registerEventHandlers(): void {
     contentContexts.delete(tabId);
 
     if (state.controlledTabId === tabId) {
+      const sessionPlugin = state.session ? getPlugin(state.session.serviceId) : null;
       state.controlledTabId = null;
       state.contentContext = null;
-      state.lastWarning = 'The controlled Netflix tab was closed.';
+      state.lastWarning = sessionPlugin
+        ? `The controlled ${sessionPlugin.descriptor.label} tab was closed.`
+        : 'The controlled tab was closed.';
       emitStateChanged();
     }
   });
@@ -249,7 +258,7 @@ async function refreshActiveTab(notify = true): Promise<void> {
   state.activeTab = summarizeTab(activeTab);
   state.contentContext = contentContexts.get(activeTab.id) ?? null;
 
-  if (state.activeTab.isNetflix) {
+  if (state.activeTab.activeServiceId) {
     try {
       const contentContext = (await browser.tabs.sendMessage(activeTab.id, {
         type: 'party:request-context',
@@ -268,15 +277,15 @@ async function refreshActiveTab(notify = true): Promise<void> {
 }
 
 async function createRoom(): Promise<PopupState> {
-  const contentContext = await requireControllableNetflixTab();
+  const { context: contentContext } = await requireControllableWatchTab();
   const memberId = state.session?.memberId ?? browser.runtime.id + ':' + crypto.randomUUID();
 
   const response = await emitWithAck<RoomResponse>('room:create', {
     memberId,
     memberName: state.settings.memberName,
-    serviceId: 'netflix',
+    serviceId: contentContext.serviceId,
     initialPlayback: {
-      serviceId: 'netflix',
+      serviceId: contentContext.serviceId,
       mediaId: contentContext.mediaId!,
       title: contentContext.mediaTitle,
       playing: contentContext.playing,
@@ -292,14 +301,14 @@ async function createRoom(): Promise<PopupState> {
 }
 
 async function joinRoom(roomCode: string): Promise<PopupState> {
-  await requireControllableNetflixTab();
+  const { context } = await requireControllableWatchTab();
   const memberId = state.session?.memberId ?? browser.runtime.id + ':' + crypto.randomUUID();
 
   const response = await emitWithAck<RoomResponse>('room:join', {
     roomCode: roomCode.trim().toUpperCase(),
     memberId,
     memberName: state.settings.memberName,
-    serviceId: 'netflix',
+    serviceId: context.serviceId,
   });
 
   state.controlledTabId = state.activeTab.tabId;
@@ -367,17 +376,31 @@ async function sendPlaybackUpdate(
   return buildPopupState();
 }
 
-async function requireControllableNetflixTab(): Promise<ServiceContentContext> {
-  if (!state.activeTab.tabId || !state.activeTab.isNetflixWatchPage) {
-    throw new Error('Open a Netflix watch page before starting a party.');
+interface ControllableWatchTab {
+  plugin: ServicePlugin;
+  context: ServiceContentContext;
+}
+
+async function requireControllableWatchTab(): Promise<ControllableWatchTab> {
+  if (!state.activeTab.tabId || !state.activeTab.isWatchPage) {
+    throw new Error('Open a supported watch page before starting a party.');
+  }
+
+  const plugin = getPlugin(state.activeTab.activeServiceId);
+  if (!plugin) {
+    throw new Error('This tab is not on a supported streaming service.');
   }
 
   const context = state.contentContext;
   if (!context?.playbackReady || !context.mediaId) {
-    throw new Error('Netflix player is not ready yet.');
+    throw new Error(`${plugin.descriptor.label} player is not ready yet.`);
   }
 
-  return context;
+  if (context.serviceId !== plugin.descriptor.id) {
+    throw new Error('Active tab and reported service disagree. Refresh the tab.');
+  }
+
+  return { plugin, context };
 }
 
 async function ensureSocket(): Promise<void> {
@@ -485,6 +508,8 @@ async function applySnapshotToControlledTab(): Promise<void> {
     return;
   }
 
+  const sessionPlugin = state.session ? getPlugin(state.session.serviceId) : null;
+
   try {
     const result = (await browser.tabs.sendMessage(state.controlledTabId, {
       type: 'party:apply-snapshot',
@@ -498,7 +523,9 @@ async function applySnapshotToControlledTab(): Promise<void> {
 
     state.lastWarning = result.applied ? null : result.reason ?? 'Sync was skipped.';
   } catch {
-    state.lastWarning = 'Netflix tab is not ready for sync yet.';
+    state.lastWarning = sessionPlugin
+      ? `${sessionPlugin.descriptor.label} tab is not ready for sync yet.`
+      : 'Controlled tab is not ready for sync yet.';
   }
 }
 
@@ -567,13 +594,15 @@ async function emitWithAck<T>(
 }
 
 function summarizeTab(tab: BrowserTab): ActiveTabSummary {
+  const url = tab.url ?? '';
+  const classification = findPluginByUrl(url);
+
   return {
-    ...createEmptyActiveTabSummary(),
     tabId: tab.id ?? null,
     title: tab.title ?? '',
-    url: tab.url ?? '',
-    isNetflix: isNetflixUrl(tab.url),
-    isNetflixWatchPage: Boolean(tab.url && /:\/\/[^/]*netflix\.com\/watch\//.test(tab.url)),
+    url,
+    activeServiceId: classification?.plugin.descriptor.id ?? null,
+    isWatchPage: classification?.isWatchPage ?? false,
   };
 }
 
@@ -582,13 +611,9 @@ function createEmptyActiveTabSummary(): ActiveTabSummary {
     tabId: null,
     title: '',
     url: '',
-    isNetflix: false,
-    isNetflixWatchPage: false,
+    activeServiceId: null,
+    isWatchPage: false,
   };
-}
-
-function isNetflixUrl(url?: string): boolean {
-  return Boolean(url && /:\/\/[^/]*netflix\.com\//.test(url));
 }
 
 function normalizeServerUrl(value: string): string {

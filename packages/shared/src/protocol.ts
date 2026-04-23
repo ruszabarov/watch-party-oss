@@ -1,4 +1,4 @@
-export const SUPPORTED_SERVICES = ['netflix'] as const;
+export const SUPPORTED_SERVICES = ['netflix', 'youtube'] as const;
 
 export type ServiceId = (typeof SUPPORTED_SERVICES)[number];
 export type ConnectionStatus =

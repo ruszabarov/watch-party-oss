@@ -18,10 +18,12 @@
   let joinCode = $state("");
 
   const activeDescriptor = $derived(
-    getServiceDescriptor(popup.contentContext?.serviceId),
+    getServiceDescriptor(
+      popup.activeTab.activeServiceId ?? popup.contentContext?.serviceId,
+    ),
   );
 
-  const isReady = $derived(popup.activeTab.isNetflixWatchPage);
+  const isReady = $derived(popup.activeTab.isWatchPage);
 
   const title = $derived.by(() => {
     if (isReady) {
@@ -67,7 +69,7 @@
 
 <section class="flex flex-col gap-3">
   <div class="flex items-start gap-3">
-    <ServiceBadge serviceId={popup.contentContext?.serviceId} />
+    <ServiceBadge serviceId={activeDescriptor?.id ?? null} />
     <div class="min-w-0 space-y-1">
       <p class="m-0 text-sm font-semibold leading-5">
         {title}

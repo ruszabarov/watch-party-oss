@@ -38,7 +38,7 @@
     if (!popup.contentContext?.mediaId) return;
 
     const update: PlaybackUpdate = {
-      serviceId: 'netflix',
+      serviceId: popup.contentContext.serviceId,
       mediaId: popup.contentContext.mediaId,
       title: popup.contentContext.mediaTitle,
       positionSec: Math.max(0, positionSec + (overrides.positionDeltaSec ?? 0)),
