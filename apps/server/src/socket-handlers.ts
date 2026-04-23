@@ -52,6 +52,7 @@ export type RealtimeState = {
 };
 
 const INVALID_PAYLOAD_ERROR = 'Invalid request payload.';
+const SOCKET_SESSION_REQUIRED_ERROR = 'Socket session not found.';
 const PLAYBACK_UPDATE_RATE_LIMIT_ERROR = 'Playback update rate limit exceeded.';
 const PLAYBACK_UPDATE_TOKENS_PER_SECOND = 10;
 const PLAYBACK_UPDATE_BURST_CAPACITY = 20;
@@ -251,14 +252,20 @@ function handleRoomLeave(
   io: RealtimeServer,
   state: RealtimeState,
   socket: ConnectionSocket,
-  payload: LeaveRoomRequest,
+  _payload: LeaveRoomRequest,
   acknowledge: Acknowledge<{ roomCode: string }>,
 ): void {
+  const session = getSocketSession(state, socket.id);
+  if (!session) {
+    acknowledge({ ok: false, error: SOCKET_SESSION_REQUIRED_ERROR });
+    return;
+  }
+
   removeSocketSession(state, socket.id);
-  leaveRoom(io, state, payload.roomCode, payload.memberId);
+  leaveRoom(io, state, session.roomCode, session.memberId);
   acknowledge({
     ok: true,
-    data: { roomCode: payload.roomCode },
+    data: { roomCode: session.roomCode },
   });
 }
 
@@ -268,7 +275,13 @@ function handlePlaybackUpdate(
   payload: PlaybackUpdateRequest,
   acknowledge: Acknowledge<ReturnType<typeof toPartySnapshot>>,
 ): void {
-  const record = state.roomStore.get(payload.roomCode);
+  const session = getSocketSession(state, socket.id);
+  if (!session) {
+    acknowledge({ ok: false, error: SOCKET_SESSION_REQUIRED_ERROR });
+    return;
+  }
+
+  const record = state.roomStore.get(session.roomCode);
   const room = record?.room;
 
   if (!room) {
@@ -276,7 +289,7 @@ function handlePlaybackUpdate(
     return;
   }
 
-  if (!roomHasMember(room, payload.memberId)) {
+  if (!roomHasMember(room, session.memberId)) {
     acknowledge({ ok: false, error: 'Member is not part of this room.' });
     return;
   }
@@ -292,7 +305,7 @@ function handlePlaybackUpdate(
   }
 
   try {
-    applyPlaybackUpdate(room, payload.update, payload.memberId);
+    applyPlaybackUpdate(room, payload.update, session.memberId);
   } catch (error) {
     acknowledge({
       ok: false,
@@ -306,6 +319,10 @@ function handlePlaybackUpdate(
   const snapshot = toPartySnapshot(room);
   acknowledge({ ok: true, data: snapshot });
   socket.to(room.roomCode).emit('playback:state', snapshot);
+}
+
+function getSocketSession(state: RealtimeState, socketId: string): SessionRecord | undefined {
+  return state.sessionsBySocket.get(socketId);
 }
 
 function bindMemberToSocket(

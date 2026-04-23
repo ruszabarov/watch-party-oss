@@ -11,10 +11,8 @@ import type {
   ClientToServerEvents,
   CreateRoomRequest,
   JoinRoomRequest,
-  LeaveRoomRequest,
   OperationResult,
   PartySnapshot,
-  PlaybackUpdateRequest,
   PlaybackUpdate,
   RoomResponse,
   ServerToClientEvents,
@@ -117,10 +115,7 @@ export class PartySessionService {
   async leaveRoom(): Promise<ReturnType<typeof buildPopupState>> {
     if (this.state.session && this.socket) {
       try {
-        await this.emitRoomLeave({
-          roomCode: this.state.session.roomCode,
-          memberId: this.state.session.memberId,
-        });
+        await this.emitRoomLeave();
       } catch {
         // Best effort.
       }
@@ -159,11 +154,7 @@ export class PartySessionService {
       return buildPopupState(this.state);
     }
 
-    await this.emitPlaybackUpdate({
-      roomCode: this.state.session.roomCode,
-      memberId: this.state.session.memberId,
-      update,
-    });
+    await this.emitPlaybackUpdate(update);
 
     if (!isLocalRelay) {
       emitStateChanged(this.state);
@@ -303,9 +294,7 @@ export class PartySessionService {
     return this.unwrapAckResponse(response);
   }
 
-  private async emitRoomLeave(
-    payload: LeaveRoomRequest,
-  ): Promise<{ roomCode: string }> {
+  private async emitRoomLeave(): Promise<{ roomCode: string }> {
     await this.ensureSocket();
     const activeSocket = this.socket;
     if (!activeSocket) {
@@ -313,13 +302,11 @@ export class PartySessionService {
     }
     const response = await activeSocket
       .timeout(5_000)
-      .emitWithAck('room:leave', this.validateOutboundPayload(leaveRoomRequestSchema, payload));
+      .emitWithAck('room:leave', this.validateOutboundPayload(leaveRoomRequestSchema, {}));
     return this.unwrapAckResponse(response);
   }
 
-  private async emitPlaybackUpdate(
-    payload: PlaybackUpdateRequest,
-  ): Promise<PartySnapshot> {
+  private async emitPlaybackUpdate(update: PlaybackUpdate): Promise<PartySnapshot> {
     await this.ensureSocket();
     const activeSocket = this.socket;
     if (!activeSocket) {
@@ -329,7 +316,7 @@ export class PartySessionService {
       .timeout(5_000)
       .emitWithAck(
         'playback:update',
-        this.validateOutboundPayload(playbackUpdateRequestSchema, payload),
+        this.validateOutboundPayload(playbackUpdateRequestSchema, { update }),
       );
     return this.unwrapAckResponse(response);
   }

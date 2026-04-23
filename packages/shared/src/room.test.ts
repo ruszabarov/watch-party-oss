@@ -6,6 +6,7 @@ import {
   createRoomRequestSchema,
   createRoomState,
   joinRoomRequestSchema,
+  leaveRoomRequestSchema,
   MAX_MEMBER_NAME_LENGTH,
   MAX_TITLE_LENGTH,
   playbackUpdateRequestSchema,
@@ -250,8 +251,6 @@ describe('protocol schemas', () => {
 
   it('rejects malformed playback updates', () => {
     const result = playbackUpdateRequestSchema.safeParse({
-      roomCode: 'AB12CD',
-      memberId: 'member-a',
       update: {
         serviceId: 'youtube',
         mediaId: 'abc123',
@@ -259,6 +258,15 @@ describe('protocol schemas', () => {
         positionSec: Number.POSITIVE_INFINITY,
         issuedAt: 1_000,
       },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unexpected identity fields on leave requests', () => {
+    const result = leaveRoomRequestSchema.safeParse({
+      roomCode: 'AB12CD',
+      memberId: 'member-a',
     });
 
     expect(result.success).toBe(false);

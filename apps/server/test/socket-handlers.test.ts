@@ -47,8 +47,6 @@ class FakeSocket {
 }
 
 const validPlaybackUpdatePayload = {
-  roomCode: 'ROOM01',
-  memberId: 'member-a',
   update: {
     serviceId: 'youtube',
     mediaId: 'abc123',
@@ -91,6 +89,10 @@ function createPlaybackUpdateTestContext(socketId = 'socket-1') {
     payload: unknown,
     acknowledge: (response: OperationResult<unknown>) => void,
   ) => void;
+  const roomLeaveHandler = socket.handlers.get('room:leave') as (
+    payload: unknown,
+    acknowledge: (response: OperationResult<unknown>) => void,
+  ) => void;
 
   const disconnectHandler = socket.handlers.get('disconnect') as () => void;
 
@@ -100,6 +102,7 @@ function createPlaybackUpdateTestContext(socketId = 'socket-1') {
     socket,
     state,
     playbackUpdateHandler,
+    roomLeaveHandler,
     disconnectHandler,
   };
 }
@@ -115,8 +118,7 @@ describe('socket handlers', () => {
     let response: OperationResult<unknown> | null = null;
     playbackUpdateHandler(
       {
-        roomCode: 'ROOM01',
-        memberId: 'member-a',
+        extra: 'field',
       },
       (value) => {
         response = value;
@@ -155,6 +157,48 @@ describe('socket handlers', () => {
     expect(room.sequence).toBe(21);
     expect(socket.emitted).toHaveLength(20);
     expect(io.emitted).toHaveLength(0);
+  });
+
+  it('rejects playback updates without a bound socket session', () => {
+    const { room, socket, state, playbackUpdateHandler } = createPlaybackUpdateTestContext();
+
+    state.sessionsBySocket.delete(socket.id);
+    state.activeSocketByMember.delete(`${room.roomCode}:member-a`);
+
+    let response: OperationResult<unknown> | null = null;
+    playbackUpdateHandler(validPlaybackUpdatePayload, (value) => {
+      response = value;
+    });
+
+    expect(response).toEqual({
+      ok: false,
+      error: 'Socket session not found.',
+    });
+    expect(room.sequence).toBe(1);
+    expect(socket.emitted).toHaveLength(0);
+  });
+
+  it('rejects playback updates with unexpected identity fields', () => {
+    const { room, socket, playbackUpdateHandler } = createPlaybackUpdateTestContext();
+
+    let response: OperationResult<unknown> | null = null;
+    playbackUpdateHandler(
+      {
+        ...validPlaybackUpdatePayload,
+        roomCode: 'ROOM99',
+        memberId: 'member-b',
+      },
+      (value) => {
+        response = value;
+      },
+    );
+
+    expect(response).toEqual({
+      ok: false,
+      error: 'Invalid request payload.',
+    });
+    expect(room.sequence).toBe(1);
+    expect(socket.emitted).toHaveLength(0);
   });
 
   it('refills playback update tokens over time', () => {
@@ -206,6 +250,81 @@ describe('socket handlers', () => {
     }
     expect(state.playbackUpdateRateLimiter.consume('socket-1')).toBe(false);
     expect(state.roomStore.size()).toBe(0);
+  });
+
+  it('attributes playback updates to the bound session member, not the payload member', () => {
+    const { room, playbackUpdateHandler } = createPlaybackUpdateTestContext();
+
+    let response: OperationResult<unknown> | null = null;
+    playbackUpdateHandler(validPlaybackUpdatePayload, (value) => {
+      response = value;
+    });
+
+    expect(response).toMatchObject({ ok: true });
+    expect(room.playback.sourceMemberId).toBe('member-a');
+  });
+
+  it('rejects room leave without a bound socket session', () => {
+    const { room, socket, state, roomLeaveHandler } = createPlaybackUpdateTestContext();
+
+    state.sessionsBySocket.delete(socket.id);
+    state.activeSocketByMember.delete(`${room.roomCode}:member-a`);
+
+    let response: OperationResult<unknown> | null = null;
+    roomLeaveHandler(
+      {},
+      (value) => {
+        response = value;
+      },
+    );
+
+    expect(response).toEqual({
+      ok: false,
+      error: 'Socket session not found.',
+    });
+    expect(room.members.has('member-a')).toBe(true);
+  });
+
+  it('rejects room leave with unexpected identity fields', () => {
+    const { room, roomLeaveHandler } = createPlaybackUpdateTestContext();
+
+    let response: OperationResult<unknown> | null = null;
+    roomLeaveHandler(
+      {
+        roomCode: room.roomCode,
+        memberId: 'member-a',
+      },
+      (value) => {
+        response = value;
+      },
+    );
+
+    expect(response).toEqual({
+      ok: false,
+      error: 'Invalid request payload.',
+    });
+    expect(room.members.has('member-a')).toBe(true);
+  });
+
+  it('removes only the bound member on room leave', () => {
+    const { io, room, roomLeaveHandler, state } = createPlaybackUpdateTestContext();
+
+    upsertRoomMember(room, 'member-b', 'Member B');
+
+    let response: OperationResult<unknown> | null = null;
+    roomLeaveHandler({}, (value) => {
+      response = value;
+    });
+
+    expect(response).toEqual({
+      ok: true,
+      data: { roomCode: room.roomCode },
+    });
+    expect(room.members.has('member-a')).toBe(false);
+    expect(room.members.has('member-b')).toBe(true);
+    expect(state.sessionsBySocket.has('socket-1')).toBe(false);
+    expect(io.emitted).toHaveLength(1);
+    expect(io.emitted[0]?.event).toBe('room:state');
   });
 
   it('sanitizes valid room creation payloads before storing and broadcasting', () => {

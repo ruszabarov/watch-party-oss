@@ -111,16 +111,11 @@ export const joinRoomRequestSchema = z.object({
   serviceId: serviceIdSchema.optional(),
 });
 
-export const leaveRoomRequestSchema = z.object({
-  roomCode: roomCodeSchema,
-  memberId: memberIdSchema,
-});
+export const leaveRoomRequestSchema = z.object({}).strict();
 
 export const playbackUpdateRequestSchema = z.object({
-  roomCode: roomCodeSchema,
-  memberId: memberIdSchema,
   update: playbackUpdateSchema,
-});
+}).strict();
 
 export type PlaybackStateInput = z.output<typeof playbackStateInputSchema>;
 export type PlaybackUpdate = z.output<typeof playbackUpdateSchema>;
