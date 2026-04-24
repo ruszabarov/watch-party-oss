@@ -18,4 +18,4 @@ ENV PORT=8787
 
 EXPOSE 8787
 
-CMD ["pnpm", "--filter", "@watch-party/server", "start"]
+CMD ["pnpm", "--filter", "@open-watch-party/server", "start"]

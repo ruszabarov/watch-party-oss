@@ -1,4 +1,4 @@
-import type { PartySnapshot, PlaybackUpdateDraft, ServiceId } from '@watch-party/shared';
+import type { PartySnapshot, PlaybackUpdateDraft, ServiceId } from '@open-watch-party/shared';
 
 import type { ApplySnapshotResult, ServiceContentContext } from '../protocol/extension';
 

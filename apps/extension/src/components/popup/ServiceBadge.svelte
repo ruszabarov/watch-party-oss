@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ServiceId } from '@watch-party/shared';
+  import type { ServiceId } from '@open-watch-party/shared';
   import {
     SUPPORTED_SERVICE_DESCRIPTORS,
     getServiceDescriptor,

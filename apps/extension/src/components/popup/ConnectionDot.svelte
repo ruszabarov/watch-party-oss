@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ConnectionStatus } from '@watch-party/shared';
+  import type { ConnectionStatus } from '@open-watch-party/shared';
 
   interface Props {
     status: ConnectionStatus;

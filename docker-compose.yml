@@ -1,5 +1,5 @@
 services:
-  watch-party-server:
+  open-watch-party-server:
     build:
       context: .
       dockerfile: Dockerfile

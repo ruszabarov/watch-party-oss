@@ -1,4 +1,4 @@
-import { createRoomCode, normalizeRoomCode, type RoomState } from '@watch-party/shared';
+import { createRoomCode, normalizeRoomCode, type RoomState } from '@open-watch-party/shared';
 
 export type RoomRecord = {
   room: RoomState;

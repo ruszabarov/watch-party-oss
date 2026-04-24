@@ -1,4 +1,4 @@
-import type { PartySnapshot, ServiceId } from '@watch-party/shared';
+import type { PartySnapshot, ServiceId } from '@open-watch-party/shared';
 
 import { type ApplySnapshotResult, type ServiceContentContext } from '../protocol/extension';
 import type { MediaLocator } from './media-locators';

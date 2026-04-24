@@ -1,4 +1,4 @@
-import type { ConnectionStatus, PartySnapshot, ServiceId } from '@watch-party/shared';
+import type { ConnectionStatus, PartySnapshot, ServiceId } from '@open-watch-party/shared';
 
 export const DEFAULT_SERVER_URL = __WATCH_PARTY_DEFAULT_SERVER_URL__;
 export const SHOW_SERVER_SETTINGS = __WATCH_PARTY_SHOW_SERVER_SETTINGS__;

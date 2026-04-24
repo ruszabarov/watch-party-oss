@@ -1,21 +1,21 @@
 {
-  "name": "watch-party-oss",
+  "name": "open-watch-party",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev:extension": "pnpm --filter @watch-party/extension dev",
-    "dev:firefox": "pnpm --filter @watch-party/extension dev:firefox",
-    "dev:server": "pnpm --filter @watch-party/server dev",
-    "build": "pnpm --filter @watch-party/extension build",
-    "build:firefox": "pnpm --filter @watch-party/extension build:firefox",
-    "build:safari": "pnpm --filter @watch-party/extension build:safari",
+    "dev:extension": "pnpm --filter @open-watch-party/extension dev",
+    "dev:firefox": "pnpm --filter @open-watch-party/extension dev:firefox",
+    "dev:server": "pnpm --filter @open-watch-party/server dev",
+    "build": "pnpm --filter @open-watch-party/extension build",
+    "build:firefox": "pnpm --filter @open-watch-party/extension build:firefox",
+    "build:safari": "pnpm --filter @open-watch-party/extension build:safari",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "check": "pnpm lint && pnpm format:check && pnpm --filter @watch-party/extension check && pnpm --filter @watch-party/shared test",
-    "postinstall": "pnpm --filter @watch-party/extension exec wxt prepare"
+    "check": "pnpm lint && pnpm format:check && pnpm --filter @open-watch-party/extension check && pnpm --filter @open-watch-party/shared test",
+    "postinstall": "pnpm --filter @open-watch-party/extension exec wxt prepare"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

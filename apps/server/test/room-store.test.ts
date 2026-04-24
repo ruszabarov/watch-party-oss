@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import * as shared from '@watch-party/shared';
+import * as shared from '@open-watch-party/shared';
 
 import { RoomStoreCapacityError, createInMemoryRoomStore } from '../src/room-store';
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ConnectionStatus } from '@watch-party/shared';
+  import type { ConnectionStatus } from '@open-watch-party/shared';
   import ConnectionDot from './ConnectionDot.svelte';
 
   interface Props {
@@ -15,7 +15,7 @@
 
 <header class="flex items-center justify-between border-b border-stone-200 bg-stone-50 px-3 py-3">
   <div class="font-semibold">
-    <span class="text-sm">Watch Party</span>
+    <span class="text-sm">Open Watch Party</span>
   </div>
 
   <div class="flex shrink-0 items-center gap-2">

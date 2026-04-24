@@ -6,7 +6,7 @@ import {
   leaveRoomRequestSchema,
   normalizeRoomCode,
   playbackUpdateRequestSchema,
-} from '@watch-party/shared';
+} from '@open-watch-party/shared';
 
 import type {
   ClientToServerEvents,
@@ -18,7 +18,7 @@ import type {
   PlaybackUpdateDraft,
   RoomResponse,
   ServerToClientEvents,
-} from '@watch-party/shared';
+} from '@open-watch-party/shared';
 
 import { getErrorMessage } from '../errors';
 import { emitStateChanged } from './notifier';

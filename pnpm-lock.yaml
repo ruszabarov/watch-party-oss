@@ -29,12 +29,12 @@ importers:
 
   apps/extension:
     dependencies:
+      '@open-watch-party/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@tailwindcss/vite':
         specifier: ^4.2.2
         version: 4.2.2(vite@8.0.9(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0))
-      '@watch-party/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@webext-core/messaging':
         specifier: ^2.3.0
         version: 2.3.0
@@ -72,7 +72,7 @@ importers:
 
   apps/server:
     dependencies:
-      '@watch-party/shared':
+      '@open-watch-party/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       socket.io:

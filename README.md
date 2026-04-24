@@ -1,4 +1,4 @@
-# Watch Party OSS
+# Open Watch Party
 
 Open-source watch party stack built as a pnpm workspace:
 
@@ -53,8 +53,8 @@ The realtime backend is a plain Node + Socket.IO service with in-memory room sta
 Build and run the server:
 
 ```bash
-docker build -t watch-party-server .
-docker run --rm -p 8787:8787 watch-party-server
+docker build -t open-watch-party-server .
+docker run --rm -p 8787:8787 open-watch-party-server
 ```
 
 Or use Docker Compose:

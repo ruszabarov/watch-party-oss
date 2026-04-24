@@ -1,6 +1,6 @@
 import { defineExtensionMessaging } from '@webext-core/messaging';
 
-import type { PartySnapshot, PlaybackUpdateDraft } from '@watch-party/shared';
+import type { PartySnapshot, PlaybackUpdateDraft } from '@open-watch-party/shared';
 
 import type { ApplySnapshotResult, PopupState, ServiceContentContext } from './extension';
 

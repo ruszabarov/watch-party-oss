@@ -21,7 +21,7 @@ import {
   type ServerToClientEvents,
   toPartySnapshot,
   upsertRoomMember,
-} from '@watch-party/shared';
+} from '@open-watch-party/shared';
 
 import {
   createTokenBucketRateLimiter,

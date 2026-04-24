@@ -1,5 +1,5 @@
 {
-  "name": "@watch-party/server",
+  "name": "@open-watch-party/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@watch-party/shared": "workspace:*",
+    "@open-watch-party/shared": "workspace:*",
     "socket.io": "^4.8.3",
     "zod": "^4.3.6"
   }

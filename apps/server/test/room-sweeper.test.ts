@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createRoomState, upsertRoomMember } from '@watch-party/shared';
+import { createRoomState, upsertRoomMember } from '@open-watch-party/shared';
 
 import { sweepIdleRooms } from '../src/room-sweeper';
 import { createRealtimeState } from '../src/socket-handlers';

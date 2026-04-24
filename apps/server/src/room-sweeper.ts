@@ -1,5 +1,5 @@
 import type { Server } from 'socket.io';
-import type { ClientToServerEvents, ServerToClientEvents } from '@watch-party/shared';
+import type { ClientToServerEvents, ServerToClientEvents } from '@open-watch-party/shared';
 
 import type { RealtimeState } from './socket-handlers';
 

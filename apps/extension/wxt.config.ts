@@ -38,12 +38,12 @@ export default defineConfig({
     },
   }),
   manifest: {
-    name: 'Watch Party',
+    name: 'Open Watch Party',
     description: 'Cross-platform watch parties for Netflix and YouTube with realtime sync.',
     permissions: ['storage', 'tabs'],
     browser_specific_settings: {
       gecko: {
-        id: 'watch-party-oss@ruszabarov.com',
+        id: 'open-watch-party@ruszabarov.com',
         data_collection_permissions: {
           required: ['browsingActivity', 'websiteContent'],
         },
@@ -54,7 +54,7 @@ export default defineConfig({
       extension_pages: `script-src 'self'; object-src 'self'; connect-src ${connectSrc.join(' ')}`,
     },
     action: {
-      default_title: 'Watch Party',
+      default_title: 'Open Watch Party',
     },
   },
 });

@@ -1,4 +1,4 @@
-import type { ServiceId } from '@watch-party/shared';
+import type { ServiceId } from '@open-watch-party/shared';
 
 import { NETFLIX_SERVICE } from './netflix';
 import { YOUTUBE_SERVICE } from './youtube';

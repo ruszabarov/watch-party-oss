@@ -1,4 +1,4 @@
-import type { PlaybackUpdateDraft } from '@watch-party/shared';
+import type { PlaybackUpdateDraft } from '@open-watch-party/shared';
 import type { ProxyServiceKey } from '@webext-core/proxy-service';
 
 import type { PopupState } from '../protocol/extension';

@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { Server } from 'socket.io';
-import type { ClientToServerEvents, ServerToClientEvents } from '@watch-party/shared';
+import type { ClientToServerEvents, ServerToClientEvents } from '@open-watch-party/shared';
 
 import { DEFAULT_MAX_ROOMS, createRealtimeState, registerSocketHandlers } from './socket-handlers';
 import { startRoomSweeper } from './room-sweeper';
@@ -41,7 +41,7 @@ const roomSweeper = startRoomSweeper(io, state, roomSweepIntervalMs, {
 });
 
 server.listen(port, () => {
-  console.log(`watch-party realtime server listening on :${port}`);
+  console.log(`open-watch-party realtime server listening on :${port}`);
 });
 
 server.on('close', () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { OperationResult, RoomResponse } from '@watch-party/shared';
-import { createRoomState, MAX_TITLE_LENGTH, upsertRoomMember } from '@watch-party/shared';
+import type { OperationResult, RoomResponse } from '@open-watch-party/shared';
+import { createRoomState, MAX_TITLE_LENGTH, upsertRoomMember } from '@open-watch-party/shared';
 
 import { createConnectionHandler, createRealtimeState } from '../src/socket-handlers';
 

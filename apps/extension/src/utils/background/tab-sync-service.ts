@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import type { PartySnapshot, PlaybackUpdateDraft } from '@watch-party/shared';
+import type { PartySnapshot, PlaybackUpdateDraft } from '@open-watch-party/shared';
 
 import type { ApplySnapshotResult, ServiceContentContext } from '../protocol/extension';
 import { sendMessage } from '../protocol/messaging';
