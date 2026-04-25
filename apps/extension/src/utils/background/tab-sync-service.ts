@@ -170,8 +170,7 @@ export class TabSyncService {
 
     const controlledContext = this.getControlledTabContext();
     if (
-      controlledContext?.playbackReady &&
-      controlledContext.mediaId &&
+      controlledContext &&
       controlledContext.mediaId !== room.playback.mediaId
     ) {
       await this.navigateControlledTabToRoom(this.deps.state.controlledTabId, room.watchUrl, {

@@ -259,14 +259,6 @@ export function runServiceContentScript(plugin: ServicePlugin) {
           };
         }
 
-        if (context.mediaId && data.snapshot.playback.mediaId !== context.mediaId) {
-          return {
-            applied: false,
-            reason: 'Current media does not match the room playback.',
-            context,
-          };
-        }
-
         let playbackResult = plugin.apply
           ? await plugin.apply(state.video, {
               positionSec: data.snapshot.playback.positionSec,
