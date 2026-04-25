@@ -8,5 +8,4 @@ services:
     environment:
       PORT: '8787'
       ROOM_IDLE_TTL_MS: '21600000'
-      ROOM_SWEEP_INTERVAL_MS: '300000'
       MAX_ROOMS: '1000'

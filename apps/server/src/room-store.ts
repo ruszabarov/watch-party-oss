@@ -1,45 +1,44 @@
 import { createRoomCode, normalizeRoomCode, type RoomState } from '@open-watch-party/shared';
-
-export type RoomRecord = {
-  room: RoomState;
-  lastActivity: number;
-};
+import { LRUCache } from 'lru-cache';
 
 export interface RoomStore {
-  get(roomCode: string): RoomRecord | undefined;
-  set(record: RoomRecord): void;
+  get(roomCode: string): RoomState | undefined;
+  set(room: RoomState): void;
   delete(roomCode: string): void;
   has(roomCode: string): boolean;
   size(): number;
-  listIdle(beforeTimestamp: number): RoomRecord[];
   generateUniqueRoomCode(): string;
 }
 
-export class RoomStoreCapacityError extends Error {
-  constructor(readonly maxRooms: number) {
-    super(`Room limit reached (${maxRooms}). Please try again later.`);
-  }
-}
+export type RoomStoreRemovalReason = LRUCache.DisposeReason;
 
 export type InMemoryRoomStoreOptions = {
   maxRooms: number;
+  roomIdleTtlMs: number;
+  onRoomRemoved?: (room: RoomState, reason: RoomStoreRemovalReason) => void;
 };
 
 export function createInMemoryRoomStore(options: InMemoryRoomStoreOptions): RoomStore {
-  const rooms = new Map<string, RoomRecord>();
+  const rooms = new LRUCache<string, RoomState>({
+    max: options.maxRooms,
+    ttl: options.roomIdleTtlMs,
+    ttlAutopurge: true,
+    perf: { now: Date.now },
+    disposeAfter: (room, _roomCode, reason) => {
+      options.onRoomRemoved?.(room, reason);
+    },
+  });
 
   return {
-    get(roomCode: string): RoomRecord | undefined {
+    get(roomCode: string): RoomState | undefined {
       return rooms.get(normalizeRoomCode(roomCode));
     },
 
-    set(record: RoomRecord): void {
-      const roomCode = normalizeRoomCode(record.room.roomCode);
-      if (!rooms.has(roomCode) && rooms.size >= options.maxRooms) {
-        throw new RoomStoreCapacityError(options.maxRooms);
-      }
-
-      rooms.set(roomCode, record);
+    set(room: RoomState): void {
+      const roomCode = normalizeRoomCode(room.roomCode);
+      rooms.set(roomCode, room, {
+        noDisposeOnSet: rooms.has(roomCode),
+      });
     },
 
     delete(roomCode: string): void {
@@ -52,10 +51,6 @@ export function createInMemoryRoomStore(options: InMemoryRoomStoreOptions): Room
 
     size(): number {
       return rooms.size;
-    },
-
-    listIdle(beforeTimestamp: number): RoomRecord[] {
-      return [...rooms.values()].filter((record) => record.lastActivity < beforeTimestamp);
     },
 
     generateUniqueRoomCode(): string {

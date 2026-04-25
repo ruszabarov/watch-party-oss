@@ -3,19 +3,13 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@open-watch-party/shared';
 
 import { DEFAULT_MAX_ROOMS, createRealtimeState, registerSocketHandlers } from './socket-handlers';
-import { startRoomSweeper } from './room-sweeper';
 
 const port = Number.parseInt(process.env['PORT'] ?? '8787', 10);
 const roomIdleTtlMs = Number.parseInt(
   process.env['ROOM_IDLE_TTL_MS'] ?? String(6 * 60 * 60 * 1_000),
   10,
 );
-const roomSweepIntervalMs = Number.parseInt(
-  process.env['ROOM_SWEEP_INTERVAL_MS'] ?? String(5 * 60 * 1_000),
-  10,
-);
 const maxRooms = Number.parseInt(process.env['MAX_ROOMS'] ?? String(DEFAULT_MAX_ROOMS), 10);
-const state = createRealtimeState({ maxRooms });
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
@@ -35,15 +29,16 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
   transports: ['websocket'],
 });
 
-registerSocketHandlers(io, state);
-const roomSweeper = startRoomSweeper(io, state, roomSweepIntervalMs, {
-  idleTtlMs: roomIdleTtlMs,
+const state = createRealtimeState({
+  maxRooms,
+  roomIdleTtlMs,
+  onRoomRemoved: (room) => {
+    io.socketsLeave(room.roomCode);
+  },
 });
+
+registerSocketHandlers(io, state);
 
 server.listen(port, () => {
   console.log(`open-watch-party realtime server listening on :${port}`);
-});
-
-server.on('close', () => {
-  clearInterval(roomSweeper);
 });

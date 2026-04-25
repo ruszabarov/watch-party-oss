@@ -12,9 +12,14 @@ type RecordedEmission = {
 
 class FakeIo {
   readonly emitted: RecordedEmission[] = [];
+  readonly leftRooms: string[] = [];
   readonly sockets = {
     sockets: new Map<string, { disconnect: (close?: boolean) => void }>(),
   };
+
+  socketsLeave(room: string): void {
+    this.leftRooms.push(room);
+  }
 
   to(room: string) {
     return {
@@ -97,7 +102,7 @@ function createPlaybackUpdateTestContext(socketId = 'socket-1') {
   });
 
   upsertRoomMember(room, 'member-a', 'Member A');
-  state.roomStore.set({ room, lastActivity: Date.now() });
+  state.roomStore.set(room);
   state.sessionsBySocket.set(socketId, {
     socketId,
     roomCode: room.roomCode,
@@ -412,10 +417,15 @@ describe('socket handlers', () => {
     expect(socket.emitted[0]?.event).toBe('room:state');
   });
 
-  it('rejects room creation when the room cap is reached', () => {
+  it('evicts the least recently used room when creating a room at capacity', () => {
     const io = new FakeIo();
     const socket = new FakeSocket('socket-3');
-    const state = createRealtimeState({ maxRooms: 1 });
+    const state = createRealtimeState({
+      maxRooms: 1,
+      onRoomRemoved: (room) => {
+        io.socketsLeave(room.roomCode);
+      },
+    });
     const room = createRoomState('ROOM01', {
       memberId: 'member-a',
       memberName: 'Member A',
@@ -429,7 +439,14 @@ describe('socket handlers', () => {
       },
     });
 
-    state.roomStore.set({ room, lastActivity: Date.now() });
+    state.roomStore.set(room);
+    state.sessionsBySocket.set('socket-old', {
+      socketId: 'socket-old',
+      roomCode: 'ROOM01',
+      memberId: 'member-a',
+    });
+    state.activeSocketByMember.set('ROOM01:member-a', 'socket-old');
+    state.playbackUpdateRateLimiter.consume('socket-old');
     createConnectionHandler(io as never, state)(socket as never);
 
     const roomCreateHandler = socket.handlers.get('room:create') as (
@@ -456,20 +473,39 @@ describe('socket handlers', () => {
       },
     );
 
-    expect(response).toEqual({
-      ok: false,
-      error: 'Room limit reached (1). Please try again later.',
-    });
+    const successfulResponse = response as { ok: true; data: RoomResponse } | null;
+    if (successfulResponse == null) {
+      throw new Error('Expected room creation to succeed.');
+    }
+
+    expect(successfulResponse.ok).toBe(true);
+    expect(successfulResponse.data.memberId).toBe('member-b');
+    expect(successfulResponse.data.snapshot.roomCode).not.toBe('ROOM01');
     expect(state.roomStore.size()).toBe(1);
+    expect(state.roomStore.get('ROOM01')).toBeUndefined();
+    expect(state.roomStore.get(successfulResponse.data.snapshot.roomCode)?.roomCode).toBe(
+      successfulResponse.data.snapshot.roomCode,
+    );
+    expect(io.leftRooms).toEqual(['ROOM01']);
+    expect(state.sessionsBySocket.has('socket-old')).toBe(false);
+    expect(state.activeSocketByMember.has('ROOM01:member-a')).toBe(false);
+
+    for (let index = 0; index < 20; index += 1) {
+      expect(state.playbackUpdateRateLimiter.consume('socket-old')).toBe(true);
+    }
+    expect(state.playbackUpdateRateLimiter.consume('socket-old')).toBe(false);
   });
 
-  it('refreshes last activity on room joins', () => {
+  it('cleans up room indexes when the lru ttl expires a room', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
 
     const io = new FakeIo();
-    const socket = new FakeSocket('socket-4');
-    const state = createRealtimeState();
+    const state = createRealtimeState({
+      roomIdleTtlMs: 1_000,
+      onRoomRemoved: (room) => {
+        io.socketsLeave(room.roomCode);
+      },
+    });
     const room = createRoomState('ROOM01', {
       memberId: 'member-a',
       memberName: 'Member A',
@@ -482,8 +518,72 @@ describe('socket handlers', () => {
         positionSec: 5,
       },
     });
+
+    state.roomStore.set(room);
+    state.sessionsBySocket.set('socket-old', {
+      socketId: 'socket-old',
+      roomCode: 'ROOM01',
+      memberId: 'member-a',
+    });
+    state.activeSocketByMember.set('ROOM01:member-a', 'socket-old');
+    state.playbackUpdateRateLimiter.consume('socket-old');
+
+    vi.advanceTimersByTime(1_001);
+
+    expect(state.roomStore.get('ROOM01')).toBeUndefined();
+    expect(io.leftRooms).toEqual(['ROOM01']);
+    expect(state.sessionsBySocket.has('socket-old')).toBe(false);
+    expect(state.activeSocketByMember.has('ROOM01:member-a')).toBe(false);
+
+    for (let index = 0; index < 20; index += 1) {
+      expect(state.playbackUpdateRateLimiter.consume('socket-old')).toBe(true);
+    }
+    expect(state.playbackUpdateRateLimiter.consume('socket-old')).toBe(false);
+  });
+
+  it('refreshes room recency on joins', () => {
+    const io = new FakeIo();
+    const socket = new FakeSocket('socket-4');
+    const state = createRealtimeState({ maxRooms: 2 });
+    const room = createRoomState('ROOM01', {
+      memberId: 'member-a',
+      memberName: 'Member A',
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: 'abc123',
+        title: 'Clip',
+        playing: true,
+        positionSec: 5,
+      },
+    });
+    const otherRoom = createRoomState('ROOM02', {
+      memberId: 'member-c',
+      memberName: 'Member C',
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: 'def456',
+        title: 'Another Clip',
+        playing: false,
+        positionSec: 0,
+      },
+    });
+    const overflowRoom = createRoomState('ROOM03', {
+      memberId: 'member-d',
+      memberName: 'Member D',
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: 'ghi789',
+        title: 'Third Clip',
+        playing: false,
+        positionSec: 0,
+      },
+    });
     upsertRoomMember(room, 'member-a', 'Member A');
-    state.roomStore.set({ room, lastActivity: Date.now() - 10_000 });
+    state.roomStore.set(room);
+    state.roomStore.set(otherRoom);
 
     createConnectionHandler(io as never, state)(socket as never);
 
@@ -501,7 +601,11 @@ describe('socket handlers', () => {
       () => undefined,
     );
 
-    expect(state.roomStore.get('ROOM01')?.lastActivity).toBe(Date.now());
+    state.roomStore.set(overflowRoom);
+
+    expect(state.roomStore.get('ROOM01')?.roomCode).toBe('ROOM01');
+    expect(state.roomStore.get('ROOM02')).toBeUndefined();
+    expect(state.roomStore.get('ROOM03')?.roomCode).toBe('ROOM03');
   });
 
   it('broadcasts room join state only to the other sockets in the room', () => {
@@ -522,7 +626,7 @@ describe('socket handlers', () => {
     });
 
     upsertRoomMember(room, 'member-a', 'Member A');
-    state.roomStore.set({ room, lastActivity: Date.now() });
+    state.roomStore.set(room);
 
     createConnectionHandler(io as never, state)(socket as never);
 
@@ -564,7 +668,7 @@ describe('socket handlers', () => {
     });
 
     upsertRoomMember(room, 'member-a', 'Member A');
-    state.roomStore.set({ room, lastActivity: Date.now() });
+    state.roomStore.set(room);
     state.sessionsBySocket.set(priorSocket.id, {
       socketId: priorSocket.id,
       roomCode: room.roomCode,
@@ -635,8 +739,8 @@ describe('socket handlers', () => {
     upsertRoomMember(firstRoom, 'member-a', 'Member A');
     upsertRoomMember(firstRoom, 'member-c', 'Member C');
     upsertRoomMember(secondRoom, 'member-b', 'Member B');
-    state.roomStore.set({ room: firstRoom, lastActivity: Date.now() });
-    state.roomStore.set({ room: secondRoom, lastActivity: Date.now() });
+    state.roomStore.set(firstRoom);
+    state.roomStore.set(secondRoom);
     state.sessionsBySocket.set(socket.id, {
       socketId: socket.id,
       roomCode: firstRoom.roomCode,
@@ -681,18 +785,68 @@ describe('socket handlers', () => {
     });
   });
 
-  it('refreshes last activity on playback updates', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
-
-    const { state, playbackUpdateHandler } = createPlaybackUpdateTestContext();
-    state.roomStore.set({
-      room: state.roomStore.get('ROOM01')!.room,
-      lastActivity: Date.now() - 10_000,
+  it('refreshes room recency on playback updates', () => {
+    const io = new FakeIo();
+    const socket = new FakeSocket('socket-playback-recency');
+    const state = createRealtimeState({ maxRooms: 2 });
+    const room = createRoomState('ROOM01', {
+      memberId: 'member-a',
+      memberName: 'Member A',
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: 'abc123',
+        title: 'Clip',
+        playing: true,
+        positionSec: 10,
+      },
+    });
+    const otherRoom = createRoomState('ROOM02', {
+      memberId: 'member-b',
+      memberName: 'Member B',
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: 'def456',
+        title: 'Another Clip',
+        playing: false,
+        positionSec: 0,
+      },
+    });
+    const overflowRoom = createRoomState('ROOM03', {
+      memberId: 'member-c',
+      memberName: 'Member C',
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: 'ghi789',
+        title: 'Third Clip',
+        playing: false,
+        positionSec: 0,
+      },
     });
 
-    playbackUpdateHandler(validPlaybackUpdatePayload, () => undefined);
+    upsertRoomMember(room, 'member-a', 'Member A');
+    state.roomStore.set(room);
+    state.roomStore.set(otherRoom);
+    state.sessionsBySocket.set(socket.id, {
+      socketId: socket.id,
+      roomCode: room.roomCode,
+      memberId: 'member-a',
+    });
+    state.activeSocketByMember.set(`${room.roomCode}:member-a`, socket.id);
+    createConnectionHandler(io as never, state)(socket as never);
 
-    expect(state.roomStore.get('ROOM01')?.lastActivity).toBe(Date.now());
+    const playbackUpdateHandler = socket.handlers.get('playback:update') as (
+      payload: unknown,
+      acknowledge: (response: OperationResult<unknown>) => void,
+    ) => void;
+
+    playbackUpdateHandler(validPlaybackUpdatePayload, () => undefined);
+    state.roomStore.set(overflowRoom);
+
+    expect(state.roomStore.get('ROOM01')?.roomCode).toBe('ROOM01');
+    expect(state.roomStore.get('ROOM02')).toBeUndefined();
+    expect(state.roomStore.get('ROOM03')?.roomCode).toBe('ROOM03');
   });
 });

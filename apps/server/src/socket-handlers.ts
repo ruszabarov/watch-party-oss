@@ -27,12 +27,7 @@ import {
   createTokenBucketRateLimiter,
   type TokenBucketRateLimiter,
 } from './token-bucket-rate-limiter';
-import {
-  RoomStoreCapacityError,
-  createInMemoryRoomStore,
-  type RoomRecord,
-  type RoomStore,
-} from './room-store';
+import { createInMemoryRoomStore, type RoomStore, type RoomStoreRemovalReason } from './room-store';
 
 type ConnectionSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -60,42 +55,42 @@ export const DEFAULT_MAX_ROOMS = 1_000;
 
 export type RealtimeStateOptions = {
   maxRooms?: number;
+  roomIdleTtlMs?: number;
+  onRoomRemoved?: (room: RoomState, reason: RoomStoreRemovalReason) => void;
 };
 
 export function createRealtimeState(options: RealtimeStateOptions = {}): RealtimeState {
-  const state = {
-    roomStore: createInMemoryRoomStore({
-      maxRooms: options.maxRooms ?? DEFAULT_MAX_ROOMS,
-    }),
-    sessionsBySocket: new Map<string, SessionRecord>(),
-    activeSocketByMember: new Map<string, string>(),
-    playbackUpdateRateLimiter: createTokenBucketRateLimiter({
-      capacity: PLAYBACK_UPDATE_BURST_CAPACITY,
-      refillRatePerSecond: PLAYBACK_UPDATE_TOKENS_PER_SECOND,
-    }),
-    removeRoom: (roomCodeValue: string): void => {
-      const roomCode = normalizeRoomCode(roomCodeValue);
-
-      state.roomStore.delete(roomCode);
-
-      for (const [socketId, session] of state.sessionsBySocket.entries()) {
-        if (session.roomCode !== roomCode) {
-          continue;
-        }
-
-        state.playbackUpdateRateLimiter.reset(socketId);
-        state.sessionsBySocket.delete(socketId);
-      }
-
-      for (const key of state.activeSocketByMember.keys()) {
-        if (key.startsWith(`${roomCode}:`)) {
-          state.activeSocketByMember.delete(key);
-        }
-      }
-    },
+  const sessionsBySocket = new Map<string, SessionRecord>();
+  const activeSocketByMember = new Map<string, string>();
+  const playbackUpdateRateLimiter = createTokenBucketRateLimiter({
+    capacity: PLAYBACK_UPDATE_BURST_CAPACITY,
+    refillRatePerSecond: PLAYBACK_UPDATE_TOKENS_PER_SECOND,
+  });
+  const roomIndexes = {
+    sessionsBySocket,
+    activeSocketByMember,
+    playbackUpdateRateLimiter,
   };
 
-  return state;
+  const roomStore = createInMemoryRoomStore({
+    maxRooms: options.maxRooms ?? DEFAULT_MAX_ROOMS,
+    roomIdleTtlMs: options.roomIdleTtlMs ?? 6 * 60 * 60 * 1_000,
+    onRoomRemoved: (room, reason) => {
+      cleanupRemovedRoom(roomIndexes, room.roomCode);
+      options.onRoomRemoved?.(room, reason);
+    },
+  });
+
+  return {
+    roomStore,
+    sessionsBySocket,
+    activeSocketByMember,
+    playbackUpdateRateLimiter,
+    removeRoom: (roomCodeValue: string): void => {
+      const roomCode = normalizeRoomCode(roomCodeValue);
+      roomStore.delete(roomCode);
+    },
+  };
 }
 
 export function registerSocketHandlers(io: RealtimeServer, state: RealtimeState): void {
@@ -192,22 +187,17 @@ function handleRoomCreate(
   try {
     const roomCode = state.roomStore.generateUniqueRoomCode();
     room = createRoomState(roomCode, payload);
-    state.roomStore.set(createRoomRecord(room));
+    state.roomStore.set(room);
   } catch (error) {
     acknowledge({
       ok: false,
-      error:
-        error instanceof RoomStoreCapacityError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : 'Room creation failed.',
+      error: error instanceof Error ? error.message : 'Room creation failed.',
     });
     return;
   }
 
   upsertRoomMember(room, payload.memberId, payload.memberName);
-  touchRoomActivity(state, room);
+  refreshRoomActivity(state, room);
 
   moveSocketSession(io, state, socket, room.roomCode, payload.memberId);
 
@@ -223,8 +213,7 @@ function handleRoomJoin(
   payload: JoinRoomRequest,
   acknowledge: Acknowledge<RoomResponse>,
 ): void {
-  const record = state.roomStore.get(payload.roomCode);
-  const room = record?.room;
+  const room = state.roomStore.get(payload.roomCode);
 
   if (!room) {
     acknowledge({ ok: false, error: 'Room not found.' });
@@ -237,7 +226,7 @@ function handleRoomJoin(
   }
 
   upsertRoomMember(room, payload.memberId, payload.memberName);
-  touchRoomActivity(state, room);
+  refreshRoomActivity(state, room);
 
   moveSocketSession(io, state, socket, payload.roomCode, payload.memberId);
 
@@ -279,8 +268,7 @@ function handlePlaybackUpdate(
     return;
   }
 
-  const record = state.roomStore.get(session.roomCode);
-  const room = record?.room;
+  const room = state.roomStore.get(session.roomCode);
 
   if (!room) {
     acknowledge({ ok: false, error: 'Room not found.' });
@@ -313,7 +301,7 @@ function handlePlaybackUpdate(
       return;
     }
 
-    touchRoomActivity(state, room);
+    refreshRoomActivity(state, room);
     socket.to(room.roomCode).emit('playback:state', snapshot);
   } catch (error) {
     acknowledge({
@@ -380,8 +368,7 @@ function leaveRoom(
   memberId: string,
 ): void {
   const roomCode = normalizeRoomCode(roomCodeValue);
-  const record = state.roomStore.get(roomCode);
-  const room = record?.room;
+  const room = state.roomStore.get(roomCode);
 
   if (!room) {
     return;
@@ -394,7 +381,7 @@ function leaveRoom(
     return;
   }
 
-  touchRoomActivity(state, room);
+  refreshRoomActivity(state, room);
   io.to(roomCode).emit('room:state', toPartySnapshot(room));
 }
 
@@ -402,16 +389,31 @@ function memberKey(roomCode: string, memberId: string): string {
   return `${roomCode}:${memberId}`;
 }
 
-function createRoomRecord(room: RoomState, now = Date.now()): RoomRecord {
-  return {
-    room,
-    lastActivity: now,
-  };
+function cleanupRemovedRoom(
+  state: Pick<
+    RealtimeState,
+    'activeSocketByMember' | 'playbackUpdateRateLimiter' | 'sessionsBySocket'
+  >,
+  roomCodeValue: string,
+): void {
+  const roomCode = normalizeRoomCode(roomCodeValue);
+
+  for (const [socketId, session] of state.sessionsBySocket.entries()) {
+    if (session.roomCode !== roomCode) {
+      continue;
+    }
+
+    state.playbackUpdateRateLimiter.reset(socketId);
+    state.sessionsBySocket.delete(socketId);
+  }
+
+  for (const key of state.activeSocketByMember.keys()) {
+    if (key.startsWith(`${roomCode}:`)) {
+      state.activeSocketByMember.delete(key);
+    }
+  }
 }
 
-function touchRoomActivity(state: RealtimeState, room: RoomState, now = Date.now()): void {
-  state.roomStore.set({
-    room,
-    lastActivity: now,
-  });
+function refreshRoomActivity(state: RealtimeState, room: RoomState): void {
+  state.roomStore.set(room);
 }

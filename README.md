@@ -67,8 +67,7 @@ Server environment variables:
 
 - `PORT`: HTTP and WebSocket port inside the container. Defaults to `8787`.
 - `ROOM_IDLE_TTL_MS`: idle room expiry window. Defaults to `21600000` (6 hours).
-- `ROOM_SWEEP_INTERVAL_MS`: room cleanup interval. Defaults to `300000` (5 minutes).
-- `MAX_ROOMS`: in-memory room cap. Defaults to `1000`.
+- `MAX_ROOMS`: in-memory room cap. Defaults to `1000`; the least recently used room is evicted when this cap is reached.
 
 Health check:
 
