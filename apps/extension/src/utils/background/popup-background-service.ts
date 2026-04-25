@@ -12,5 +12,5 @@ export interface PopupBackgroundService {
   sendPlaybackUpdate(payload: PlaybackUpdateDraft): Promise<void>;
 }
 
-export const POPUP_BACKGROUND_SERVICE_KEY =
-  'watch-party-popup-background-service' as ProxyServiceKey<PopupBackgroundService>;
+export const POPUP_BACKGROUND_SERVICE_KEY: ProxyServiceKey<PopupBackgroundService> =
+  'watch-party-popup-background-service';

@@ -1,5 +1,4 @@
 import { browser } from 'wxt/browser';
-import { io, type Socket } from 'socket.io-client';
 import {
   createRoomRequestSchema,
   joinRoomRequestSchema,
@@ -9,7 +8,6 @@ import {
 } from '@open-watch-party/shared';
 
 import type {
-  ClientToServerEvents,
   CreateRoomRequest,
   JoinRoomRequest,
   OperationResult,
@@ -17,20 +15,18 @@ import type {
   PlaybackUpdate,
   PlaybackUpdateDraft,
   RoomResponse,
-  ServerToClientEvents,
 } from '@open-watch-party/shared';
 
 import { getErrorMessage } from '../errors';
 import { emitStateChanged } from './notifier';
+import { createRealtimeConnection, type RealtimeConnection } from './realtime-connection';
 import type { InternalState } from './state';
 import { normalizeServerUrl } from './state';
 import type { SettingsStore } from './settings-store';
 import type { TabSyncService } from './tab-sync-service';
 
 export class PartySessionService {
-  private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
-
-  private currentSocketUrl: string | null = null;
+  private connection: RealtimeConnection | null = null;
 
   constructor(
     private readonly state: InternalState,
@@ -44,7 +40,7 @@ export class PartySessionService {
     }
 
     try {
-      await this.ensureSocket();
+      await this.ensureConnection();
       const response = await this.emitRoomJoin({
         roomCode: this.state.session.roomCode,
         memberId: this.state.session.memberId,
@@ -105,7 +101,7 @@ export class PartySessionService {
   }
 
   async leaveRoom(): Promise<void> {
-    if (this.state.session && this.socket) {
+    if (this.state.session && this.connection) {
       try {
         await this.emitRoomLeave();
       } catch {
@@ -116,9 +112,7 @@ export class PartySessionService {
     this.state.room = null;
     this.state.roomMemberId = null;
     this.state.session = null;
-    this.socket?.disconnect();
-    this.socket = null;
-    this.currentSocketUrl = null;
+    this.closeConnection();
     this.state.connectionStatus = 'disconnected';
     this.state.lastError = null;
     this.state.lastWarning = null;
@@ -152,93 +146,78 @@ export class PartySessionService {
     return this.state.session?.memberId ?? `${browser.runtime.id}:${crypto.randomUUID()}`;
   }
 
-  private async ensureSocket(): Promise<void> {
+  private async ensureConnection(): Promise<void> {
     const serverUrl = normalizeServerUrl(this.state.settings.serverUrl);
 
-    if (this.socket && this.socket.connected && this.currentSocketUrl === serverUrl) {
+    if (this.connection?.serverUrl === serverUrl) {
       return;
     }
 
-    if (this.socket) {
-      this.socket.disconnect();
-    }
+    this.closeConnection();
 
-    this.state.connectionStatus = 'connecting';
-    emitStateChanged(this.state);
+    const connection = createRealtimeConnection(serverUrl);
+    this.connection = connection;
 
-    this.socket = io(serverUrl, {
-      autoConnect: true,
-      reconnection: true,
-      transports: ['websocket'],
-    });
-    this.currentSocketUrl = serverUrl;
-    let hasConnectedBefore = false;
-
-    this.socket.on('connect', async () => {
-      const isReconnect = hasConnectedBefore;
-      hasConnectedBefore = true;
-      this.state.connectionStatus = 'connected';
-      this.state.lastError = null;
-
-      if (isReconnect && this.state.session) {
-        try {
-          const response = await this.emitRoomJoin({
-            roomCode: this.state.session.roomCode,
-            memberId: this.state.session.memberId,
-            memberName: this.state.settings.memberName,
-            serviceId: this.state.session.serviceId,
-          });
-
-          await this.applyRoomResponse(response);
-          await this.tabSync.applySnapshotToControlledTab();
-        } catch (error) {
-          this.state.lastError = getErrorMessage(error);
-          this.state.connectionStatus = 'error';
-        }
+    connection.onStatusChange((status, errorMessage) => {
+      if (this.connection !== connection) {
+        return;
       }
 
+      this.state.connectionStatus = status;
+      this.state.lastError = errorMessage ?? (status === 'connected' ? null : this.state.lastError);
       emitStateChanged(this.state);
     });
 
-    this.socket.on('disconnect', () => {
-      this.state.connectionStatus = this.state.session ? 'reconnecting' : 'disconnected';
-      emitStateChanged(this.state);
+    connection.onReconnect(async () => {
+      if (this.connection !== connection) {
+        return;
+      }
+
+      await this.rejoinRoom();
     });
 
-    this.socket.on('connect_error', (error) => {
-      this.state.connectionStatus = 'error';
-      this.state.lastError = error.message;
-      emitStateChanged(this.state);
-    });
+    connection.on('room:state', (snapshot) => {
+      if (this.connection !== connection) {
+        return;
+      }
 
-    this.socket.on('room:state', async (snapshot) => {
       this.state.room = snapshot;
       this.state.lastWarning = null;
       emitStateChanged(this.state);
     });
 
-    this.socket.on('playback:state', async (snapshot) => {
+    connection.on('playback:state', async (snapshot) => {
+      if (this.connection !== connection) {
+        return;
+      }
+
       this.state.room = snapshot;
       this.state.lastWarning = null;
       await this.tabSync.applySnapshotToControlledTab();
       emitStateChanged(this.state);
     });
+  }
 
-    await new Promise<void>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error('Timed out connecting to the realtime server.'));
-      }, 5_000);
+  private async rejoinRoom(): Promise<void> {
+    if (!this.state.session) {
+      return;
+    }
 
-      this.socket?.once('connect', () => {
-        clearTimeout(timeoutId);
-        resolve();
+    try {
+      const response = await this.emitRoomJoin({
+        roomCode: this.state.session.roomCode,
+        memberId: this.state.session.memberId,
+        memberName: this.state.settings.memberName,
+        serviceId: this.state.session.serviceId,
       });
 
-      this.socket?.once('connect_error', (error) => {
-        clearTimeout(timeoutId);
-        reject(error);
-      });
-    });
+      await this.applyRoomResponse(response);
+      await this.tabSync.applySnapshotToControlledTab();
+    } catch (error) {
+      this.state.lastError = getErrorMessage(error);
+      this.state.connectionStatus = 'error';
+      emitStateChanged(this.state);
+    }
   }
 
   private async applyRoomResponse(response: RoomResponse): Promise<void> {
@@ -264,53 +243,38 @@ export class PartySessionService {
   }
 
   private async emitRoomCreate(payload: CreateRoomRequest): Promise<RoomResponse> {
-    await this.ensureSocket();
-    const activeSocket = this.socket;
-    if (!activeSocket) {
-      throw new Error('Realtime connection unavailable.');
-    }
-    const response = await activeSocket
-      .timeout(5_000)
-      .emitWithAck('room:create', this.validateOutboundPayload(createRoomRequestSchema, payload));
+    const connection = await this.getConnection();
+    const response = await connection.request(
+      'room:create',
+      this.validateOutboundPayload(createRoomRequestSchema, payload),
+    );
     return this.unwrapAckResponse(response);
   }
 
   private async emitRoomJoin(payload: JoinRoomRequest): Promise<RoomResponse> {
-    await this.ensureSocket();
-    const activeSocket = this.socket;
-    if (!activeSocket) {
-      throw new Error('Realtime connection unavailable.');
-    }
-    const response = await activeSocket
-      .timeout(5_000)
-      .emitWithAck('room:join', this.validateOutboundPayload(joinRoomRequestSchema, payload));
+    const connection = await this.getConnection();
+    const response = await connection.request(
+      'room:join',
+      this.validateOutboundPayload(joinRoomRequestSchema, payload),
+    );
     return this.unwrapAckResponse(response);
   }
 
   private async emitRoomLeave(): Promise<{ roomCode: string }> {
-    await this.ensureSocket();
-    const activeSocket = this.socket;
-    if (!activeSocket) {
-      throw new Error('Realtime connection unavailable.');
-    }
-    const response = await activeSocket
-      .timeout(5_000)
-      .emitWithAck('room:leave', this.validateOutboundPayload(leaveRoomRequestSchema, {}));
+    const connection = await this.getConnection();
+    const response = await connection.request(
+      'room:leave',
+      this.validateOutboundPayload(leaveRoomRequestSchema, {}),
+    );
     return this.unwrapAckResponse(response);
   }
 
   private async emitPlaybackUpdate(update: PlaybackUpdate): Promise<PartySnapshot> {
-    await this.ensureSocket();
-    const activeSocket = this.socket;
-    if (!activeSocket) {
-      throw new Error('Realtime connection unavailable.');
-    }
-    const response = await activeSocket
-      .timeout(5_000)
-      .emitWithAck(
-        'playback:update',
-        this.validateOutboundPayload(playbackUpdateRequestSchema, { update }),
-      );
+    const connection = await this.getConnection();
+    const response = await connection.request(
+      'playback:update',
+      this.validateOutboundPayload(playbackUpdateRequestSchema, { update }),
+    );
     return this.unwrapAckResponse(response);
   }
 
@@ -318,6 +282,20 @@ export class PartySessionService {
     this.state.room = snapshot;
     this.state.lastWarning = null;
     emitStateChanged(this.state);
+  }
+
+  private async getConnection(): Promise<RealtimeConnection> {
+    await this.ensureConnection();
+    if (!this.connection) {
+      throw new Error('Realtime connection unavailable.');
+    }
+
+    return this.connection;
+  }
+
+  private closeConnection(): void {
+    this.connection?.disconnect();
+    this.connection = null;
   }
 
   private async incrementPlaybackClientSequence(

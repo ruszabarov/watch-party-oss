@@ -15,6 +15,12 @@ type ReadyServiceContentContext = ServiceContentContext & {
   mediaId: string;
 };
 
+function isReadyServiceContentContext(
+  context: ServiceContentContext | null,
+): context is ReadyServiceContentContext {
+  return Boolean(context?.playbackReady && context.mediaId);
+}
+
 interface ControllableWatchTab {
   context: ReadyServiceContentContext;
   playback: PlaybackUpdateDraft;
@@ -222,7 +228,7 @@ export class TabSyncService {
     }
 
     const context = this.deps.state.contentContext;
-    if (!context?.playbackReady || !context.mediaId) {
+    if (!isReadyServiceContentContext(context)) {
       throw new Error(`${plugin.descriptor.label} player is not ready yet.`);
     }
 
@@ -236,7 +242,7 @@ export class TabSyncService {
       throw new Error(`${plugin.descriptor.label} playback state is not ready yet.`);
     }
 
-    return { context: context as ReadyServiceContentContext, playback };
+    return { context, playback };
   }
 
   getControlledTabContext(): ServiceContentContext | null {
