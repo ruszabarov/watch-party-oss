@@ -2,12 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OperationResult, RoomResponse } from '@open-watch-party/shared';
 import { createRoomState, MAX_TITLE_LENGTH, upsertRoomMember } from '@open-watch-party/shared';
 
-import {
-  createConnectionHandler,
-  createRealtimeState,
-  type SessionRecord,
-} from '../src/socket-handlers';
-import { createPlaybackUpdateTokenConsumer } from '../src/playback-update-rate-limiter';
+import { createConnectionHandler, createRealtimeState, type SessionRecord } from '../src/socket';
+import { createPlaybackUpdateTokenConsumer } from '../src/rate-limiter';
 
 type RecordedEmission = {
   room: string;

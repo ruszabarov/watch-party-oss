@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createPlaybackUpdateTokenConsumer } from '../src/playback-update-rate-limiter';
+import { createPlaybackUpdateTokenConsumer } from '../src/rate-limiter';
 
 afterEach(() => {
   vi.useRealTimers();

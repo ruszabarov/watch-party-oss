@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as shared from '@open-watch-party/shared';
 
-import { createInMemoryRoomStore } from '../src/room-store';
+import { createInMemoryRoomStore } from '../src/room';
 
 function createRoom(roomCode: string, now = 1_000) {
   return shared.createRoomState(

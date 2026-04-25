@@ -2,7 +2,7 @@ import http from 'node:http';
 import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@open-watch-party/shared';
 
-import { DEFAULT_MAX_ROOMS, createRealtimeState, registerSocketHandlers } from './socket-handlers';
+import { DEFAULT_MAX_ROOMS, createRealtimeState, registerSocketHandlers } from './socket';
 
 const port = Number.parseInt(process.env['PORT'] ?? '8787', 10);
 const roomIdleTtlMs = Number.parseInt(

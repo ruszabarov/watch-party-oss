@@ -23,8 +23,8 @@ import {
   upsertRoomMember,
 } from '@open-watch-party/shared';
 
-import { createPlaybackUpdateTokenConsumer } from './playback-update-rate-limiter';
-import { createInMemoryRoomStore, type RoomStore, type RoomStoreRemovalReason } from './room-store';
+import { createPlaybackUpdateTokenConsumer } from './rate-limiter';
+import { createInMemoryRoomStore, type RoomStore, type RoomStoreRemovalReason } from './room';
 
 type ConnectionSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents>;
