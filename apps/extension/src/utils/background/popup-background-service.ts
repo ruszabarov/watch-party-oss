@@ -5,11 +5,11 @@ import type { PopupState } from '../protocol/extension';
 
 export interface PopupBackgroundService {
   getState(): Promise<PopupState>;
-  updateSettings(payload: { serverUrl: string; memberName: string }): Promise<PopupState>;
-  createRoom(): Promise<PopupState>;
-  joinRoom(payload: { roomCode: string }): Promise<PopupState>;
-  leaveRoom(): Promise<PopupState>;
-  sendPlaybackUpdate(payload: PlaybackUpdateDraft): Promise<PopupState>;
+  updateSettings(payload: { serverUrl: string; memberName: string }): Promise<void>;
+  createRoom(): Promise<void>;
+  joinRoom(payload: { roomCode: string }): Promise<void>;
+  leaveRoom(): Promise<void>;
+  sendPlaybackUpdate(payload: PlaybackUpdateDraft): Promise<void>;
 }
 
 export const POPUP_BACKGROUND_SERVICE_KEY =

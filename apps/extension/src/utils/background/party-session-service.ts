@@ -23,7 +23,7 @@ import type {
 import { getErrorMessage } from '../errors';
 import { emitStateChanged } from './notifier';
 import type { InternalState } from './state';
-import { buildPopupState, normalizeServerUrl } from './state';
+import { normalizeServerUrl } from './state';
 import type { SettingsStore } from './settings-store';
 import type { TabSyncService } from './tab-sync-service';
 
@@ -64,7 +64,7 @@ export class PartySessionService {
     }
   }
 
-  async createRoom(): Promise<ReturnType<typeof buildPopupState>> {
+  async createRoom(): Promise<void> {
     await this.tabSync.refreshActiveTab(false);
     const { context } = this.tabSync.requireControllableWatchTab();
 
@@ -84,11 +84,9 @@ export class PartySessionService {
     this.state.controlledTabId = this.state.activeTab.tabId;
     await this.applyRoomResponse(response);
     await this.tabSync.applySnapshotToControlledTab();
-
-    return buildPopupState(this.state);
   }
 
-  async joinRoom(roomCode: string): Promise<ReturnType<typeof buildPopupState>> {
+  async joinRoom(roomCode: string): Promise<void> {
     await this.tabSync.refreshActiveTab(false);
     const tabId = this.state.activeTab.tabId;
     if (tabId == null) {
@@ -101,8 +99,8 @@ export class PartySessionService {
       memberName: this.state.settings.memberName,
     });
 
-    await this.applyRoomResponse(response);
     this.state.controlledTabId = tabId;
+    await this.applyRoomResponse(response);
 
     try {
       await this.tabSync.navigateControlledTabToRoom(tabId, response.snapshot.watchUrl);
@@ -110,11 +108,9 @@ export class PartySessionService {
       await this.leaveRoom();
       throw error;
     }
-
-    return buildPopupState(this.state);
   }
 
-  async leaveRoom(): Promise<ReturnType<typeof buildPopupState>> {
+  async leaveRoom(): Promise<void> {
     if (this.state.session && this.socket) {
       try {
         await this.emitRoomLeave();
@@ -134,17 +130,12 @@ export class PartySessionService {
     this.state.lastWarning = null;
     await this.settingsStore.persist();
     emitStateChanged(this.state);
-
-    return buildPopupState(this.state);
   }
 
-  async sendPlaybackUpdate(
-    update: PlaybackUpdateDraft,
-    isLocalRelay = false,
-  ): Promise<ReturnType<typeof buildPopupState>> {
+  async sendPlaybackUpdate(update: PlaybackUpdateDraft, isLocalRelay = false): Promise<void> {
     const session = this.state.session;
     if (!session) {
-      if (isLocalRelay) return buildPopupState(this.state);
+      if (isLocalRelay) return;
       throw new Error('Join or create a room first.');
     }
 
@@ -152,7 +143,7 @@ export class PartySessionService {
     if (playbackContext?.mediaId && playbackContext.mediaId !== update.mediaId) {
       this.state.lastWarning = 'Local title no longer matches the active room.';
       emitStateChanged(this.state);
-      return buildPopupState(this.state);
+      return;
     }
 
     const stampedUpdate = {
@@ -161,8 +152,6 @@ export class PartySessionService {
     };
     const snapshot = await this.emitPlaybackUpdate(stampedUpdate);
     this.applyPlaybackSnapshot(snapshot);
-
-    return buildPopupState(this.state);
   }
 
   private ensureMemberId(): string {

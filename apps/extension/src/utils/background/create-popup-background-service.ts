@@ -1,6 +1,6 @@
-import type { PopupState } from '../protocol/extension';
 import { getErrorMessage } from '../errors';
 import { emitStateChanged } from './notifier';
+import type { PopupBackgroundService } from './popup-background-service';
 import type { PartySessionService } from './party-session-service';
 import type { SettingsStore } from './settings-store';
 import type { InternalState } from './state';
@@ -10,40 +10,33 @@ export function createPopupBackgroundService(
   state: InternalState,
   settingsStore: SettingsStore,
   partySessionService: PartySessionService,
-) {
-  async function handlePopupRequest<T>(
-    handler: () => Promise<T>,
-    emitErrorState = true,
-  ): Promise<T | PopupState> {
+): PopupBackgroundService {
+  async function runMutation(handler: () => Promise<void>): Promise<void> {
     try {
-      return await handler();
+      await handler();
     } catch (error) {
       state.lastError = getErrorMessage(error);
-      if (emitErrorState) {
-        emitStateChanged(state);
-      }
-      return buildPopupState(state);
+      emitStateChanged(state);
     }
   }
 
   return {
-    getState: () => handlePopupRequest(async () => buildPopupState(state)),
+    getState: async () => buildPopupState(state),
 
-    updateSettings: ({ serverUrl, memberName }: PopupState['settings']) =>
-      handlePopupRequest(async () => {
+    updateSettings: ({ serverUrl, memberName }) =>
+      runMutation(async () => {
         await settingsStore.updateSettings({ serverUrl, memberName });
         emitStateChanged(state);
-        return buildPopupState(state);
       }),
 
-    createRoom: () => handlePopupRequest(() => partySessionService.createRoom()),
+    createRoom: () => runMutation(() => partySessionService.createRoom()),
 
     joinRoom: ({ roomCode }: { roomCode: string }) =>
-      handlePopupRequest(() => partySessionService.joinRoom(roomCode)),
+      runMutation(() => partySessionService.joinRoom(roomCode)),
 
-    leaveRoom: () => handlePopupRequest(() => partySessionService.leaveRoom()),
+    leaveRoom: () => runMutation(() => partySessionService.leaveRoom()),
 
     sendPlaybackUpdate: (payload: Parameters<PartySessionService['sendPlaybackUpdate']>[0]) =>
-      handlePopupRequest(() => partySessionService.sendPlaybackUpdate(payload)),
+      runMutation(() => partySessionService.sendPlaybackUpdate(payload)),
   };
 }

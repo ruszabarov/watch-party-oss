@@ -19,12 +19,11 @@
   import Settings from '../../components/popup/Settings.svelte';
   import Notice from '../../components/popup/Notice.svelte';
 
-  const emptyState = createDefaultPopupState();
   const backgroundService = createProxyService<PopupBackgroundService>(
     POPUP_BACKGROUND_SERVICE_KEY,
   );
 
-  let popup: PopupState = $state(emptyState);
+  let popup: PopupState = $state(createDefaultPopupState());
   let isBusy = $state(false);
   let settingsOpen = $state(false);
 
@@ -40,10 +39,10 @@
     }
   }
 
-  async function perform(action: () => Promise<PopupState>): Promise<void> {
+  async function perform(action: () => Promise<void>): Promise<void> {
     isBusy = true;
     try {
-      popup = await action();
+      await action();
     } catch (error) {
       setLastError(error);
     } finally {
