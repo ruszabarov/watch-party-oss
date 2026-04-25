@@ -18,7 +18,7 @@ import type {
 } from '@open-watch-party/shared';
 
 import { getErrorMessage } from '../errors';
-import { emitStateChanged } from './notifier';
+import { syncPopupState } from './popup-state-item';
 import { createRealtimeConnection, type RealtimeConnection } from './realtime-connection';
 import type { BackgroundState } from './state';
 import { normalizeServerUrl } from './state';
@@ -55,7 +55,7 @@ export class PartySessionService {
       this.state.lastError = getErrorMessage(error);
       this.state.connectionStatus = 'error';
       await this.settingsStore.persist();
-      emitStateChanged(this.state);
+      syncPopupState(this.state);
     }
   }
 
@@ -110,7 +110,7 @@ export class PartySessionService {
     this.state.lastError = null;
     this.state.lastWarning = null;
     await this.settingsStore.persist();
-    emitStateChanged(this.state);
+    syncPopupState(this.state);
   }
 
   async sendPlaybackUpdate(update: PlaybackUpdateDraft, isLocalRelay = false): Promise<void> {
@@ -123,7 +123,7 @@ export class PartySessionService {
     const playbackContext = this.controlledTab.getControlledTabContext();
     if (playbackContext?.mediaId && playbackContext.mediaId !== update.mediaId) {
       this.state.lastWarning = 'Local title no longer matches the active room.';
-      emitStateChanged(this.state);
+      syncPopupState(this.state);
       return;
     }
 
@@ -158,7 +158,7 @@ export class PartySessionService {
 
       this.state.connectionStatus = status;
       this.state.lastError = errorMessage ?? (status === 'connected' ? null : this.state.lastError);
-      emitStateChanged(this.state);
+      syncPopupState(this.state);
     });
 
     connection.onReconnect(async () => {
@@ -176,7 +176,7 @@ export class PartySessionService {
 
       this.state.room = snapshot;
       this.state.lastWarning = null;
-      emitStateChanged(this.state);
+      syncPopupState(this.state);
     });
 
     connection.on('playback:state', async (snapshot) => {
@@ -187,7 +187,7 @@ export class PartySessionService {
       this.state.room = snapshot;
       this.state.lastWarning = null;
       await this.controlledTab.applySnapshotToControlledTab();
-      emitStateChanged(this.state);
+      syncPopupState(this.state);
     });
   }
 
@@ -209,7 +209,7 @@ export class PartySessionService {
     } catch (error) {
       this.state.lastError = getErrorMessage(error);
       this.state.connectionStatus = 'error';
-      emitStateChanged(this.state);
+      syncPopupState(this.state);
     }
   }
 
@@ -231,7 +231,7 @@ export class PartySessionService {
     this.state.connectionStatus = 'connected';
     this.state.lastError = null;
     await this.settingsStore.persistSession(this.state.session);
-    emitStateChanged(this.state);
+    syncPopupState(this.state);
   }
 
   private async emitRoomCreate(payload: CreateRoomRequest): Promise<RoomResponse> {
@@ -273,7 +273,7 @@ export class PartySessionService {
   private applyPlaybackSnapshot(snapshot: PartySnapshot): void {
     this.state.room = snapshot;
     this.state.lastWarning = null;
-    emitStateChanged(this.state);
+    syncPopupState(this.state);
   }
 
   private async getConnection(): Promise<RealtimeConnection> {

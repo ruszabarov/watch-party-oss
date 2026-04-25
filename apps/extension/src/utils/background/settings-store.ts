@@ -1,4 +1,4 @@
-import { storage } from 'wxt/utils/storage';
+import { storage } from '#imports';
 
 import type { BackgroundState, SessionInfo, StoredSettings } from './state';
 import { normalizeMemberName, normalizeServerUrl } from './state';

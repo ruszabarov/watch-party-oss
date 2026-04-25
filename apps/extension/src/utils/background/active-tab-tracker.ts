@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import type { ServiceContentContext } from '../protocol/extension';
 import { sendMessage } from '../protocol/messaging';
 import { findPluginByUrl } from '../services/registry';
-import { emitStateChanged } from './notifier';
+import { syncPopupState } from './popup-state-item';
 import type { BackgroundState } from './state';
 import { createEmptyActiveTabSummary } from './state';
 
@@ -33,7 +33,7 @@ export class ActiveTabTracker {
       this.state.activeTab = createEmptyActiveTabSummary();
       this.state.contentContext = null;
       if (notify) {
-        emitStateChanged(this.state);
+        syncPopupState(this.state);
       }
       return;
     }
@@ -48,7 +48,7 @@ export class ActiveTabTracker {
     }
 
     if (notify) {
-      emitStateChanged(this.state);
+      syncPopupState(this.state);
     }
   }
 
@@ -56,7 +56,7 @@ export class ActiveTabTracker {
     const isActiveTab = this.state.activeTab.tabId === tabId;
     if (isActiveTab) {
       this.state.contentContext = context;
-      emitStateChanged(this.state);
+      syncPopupState(this.state);
     }
   }
 }

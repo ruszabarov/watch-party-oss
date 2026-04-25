@@ -3,7 +3,7 @@ import type { PartySnapshot, PlaybackUpdateDraft } from '@open-watch-party/share
 import type { ApplySnapshotResult, ServiceContentContext } from '../protocol/extension';
 import { sendMessage } from '../protocol/messaging';
 import { getPlugin } from '../services/registry';
-import { emitStateChanged } from './notifier';
+import { syncPopupState } from './popup-state-item';
 import type { BackgroundState } from './state';
 import type { ActiveTabTracker } from './active-tab-tracker';
 
@@ -50,7 +50,7 @@ export class ControlledTabService {
         tab.url === this.pendingControlledNavigationUrl
       ) {
         this.deps.state.lastWarning = null;
-        emitStateChanged(this.deps.state);
+        syncPopupState(this.deps.state);
       }
 
       if (tabId === this.deps.state.controlledTabId && tab.url) {
@@ -59,7 +59,7 @@ export class ControlledTabService {
           : null;
         if (sessionPlugin && !sessionPlugin.parseUrl(tab.url)) {
           this.deps.state.lastWarning = `The controlled tab left ${sessionPlugin.descriptor.label}.`;
-          emitStateChanged(this.deps.state);
+          syncPopupState(this.deps.state);
         }
       }
     });
@@ -75,7 +75,7 @@ export class ControlledTabService {
         this.deps.state.lastWarning = sessionPlugin
           ? `The controlled ${sessionPlugin.descriptor.label} tab was closed.`
           : 'The controlled tab was closed.';
-        emitStateChanged(this.deps.state);
+        syncPopupState(this.deps.state);
       }
     });
   }
@@ -85,7 +85,7 @@ export class ControlledTabService {
     if (isControlledTab) {
       this.controlledContext = context;
       this.deps.state.contentContext = context;
-      emitStateChanged(this.deps.state);
+      syncPopupState(this.deps.state);
     }
   }
 
@@ -157,7 +157,7 @@ export class ControlledTabService {
   ): Promise<void> {
     this.pendingControlledNavigationUrl = watchUrl;
     this.deps.state.lastWarning = null;
-    emitStateChanged(this.deps.state);
+    syncPopupState(this.deps.state);
 
     try {
       await browser.tabs.update(tabId, {

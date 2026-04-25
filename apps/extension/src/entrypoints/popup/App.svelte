@@ -1,17 +1,11 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { createProxyService } from '@webext-core/proxy-service';
-
   import {
     createDefaultPopupState,
     type PopupState,
   } from '../../utils/protocol/extension';
-  import { onMessage } from '../../utils/protocol/messaging';
+  import { sendMessage } from '../../utils/protocol/messaging';
   import { getErrorMessage } from '../../utils/errors';
-  import {
-    POPUP_BACKGROUND_SERVICE_KEY,
-    type PopupBackgroundService,
-  } from '../../utils/background/popup-background-service';
+  import { popupStateItem } from '../../utils/background/popup-state-item';
 
   import Header from '../../components/popup/Header.svelte';
   import Lobby from '../../components/popup/Lobby.svelte';
@@ -19,24 +13,12 @@
   import Settings from '../../components/popup/Settings.svelte';
   import Notice from '../../components/popup/Notice.svelte';
 
-  const backgroundService = createProxyService<PopupBackgroundService>(
-    POPUP_BACKGROUND_SERVICE_KEY,
-  );
-
   let popup: PopupState = $state(createDefaultPopupState());
   let isBusy = $state(false);
   let settingsOpen = $state(false);
 
   function setLastError(error: unknown): void {
     popup = { ...popup, lastError: getErrorMessage(error, 'Unexpected popup error.') };
-  }
-
-  async function syncState(): Promise<void> {
-    try {
-      popup = await backgroundService.getState();
-    } catch (error) {
-      setLastError(error);
-    }
   }
 
   async function perform(action: () => Promise<void>): Promise<void> {
@@ -51,19 +33,19 @@
   }
 
   function handleCreateRoom(): void {
-    void perform(() => backgroundService.createRoom());
+    void perform(() => sendMessage('popup:create-room', undefined));
   }
 
   function handleJoinRoom(roomCode: string): void {
-    void perform(() => backgroundService.joinRoom({ roomCode }));
+    void perform(() => sendMessage('popup:join-room', { roomCode }));
   }
 
   function handleLeaveRoom(): void {
-    void perform(() => backgroundService.leaveRoom());
+    void perform(() => sendMessage('popup:leave-room', undefined));
   }
 
   function handleSaveSettings(next: PopupState['settings']): void {
-    void perform(() => backgroundService.updateSettings(next)).then(closeSettings);
+    void perform(() => sendMessage('popup:update-settings', next)).then(closeSettings);
   }
 
   function dismissError(): void {
@@ -82,16 +64,14 @@
     settingsOpen = false;
   }
 
-  onMount(() => {
-    void syncState();
+  $effect(() => {
+    popupStateItem.getValue().then((v) => { popup = v; });
 
-    const removeStateListener = onMessage('party:state-updated', ({ data }) => {
-      popup = data;
+    const unwatch = popupStateItem.watch((newValue) => {
+      popup = newValue;
     });
 
-    return () => {
-      removeStateListener();
-    };
+    return () => unwatch();
   });
 </script>
 

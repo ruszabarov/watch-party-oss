@@ -1,12 +1,11 @@
 import { defineBackground } from 'wxt/utils/define-background';
-import { registerService } from '@webext-core/proxy-service';
 
+import { getErrorMessage } from '../utils/errors';
 import { onMessage } from '../utils/protocol/messaging';
-import { createPopupBackgroundService } from '../utils/background/create-popup-background-service';
+import { syncPopupState } from '../utils/background/popup-state-item';
 import { PartySessionService } from '../utils/background/party-session-service';
-import { POPUP_BACKGROUND_SERVICE_KEY } from '../utils/background/popup-background-service';
 import { SettingsStore } from '../utils/background/settings-store';
-import { createBackgroundState } from '../utils/background/state';
+import { createBackgroundState, type BackgroundState } from '../utils/background/state';
 import { ActiveTabTracker } from '../utils/background/active-tab-tracker';
 import { ControlledTabService } from '../utils/background/controlled-tab-service';
 
@@ -28,12 +27,8 @@ export default defineBackground(() => {
   );
   partySessionService = new PartySessionService(state, settingsStore, controlledTabService);
 
-  registerService(
-    POPUP_BACKGROUND_SERVICE_KEY,
-    createPopupBackgroundService(state, settingsStore, partySessionService),
-  );
-
-  registerEventHandlers(activeTabTracker, controlledTabService);
+  registerContentHandlers(activeTabTracker, controlledTabService);
+  registerPopupHandlers(state, settingsStore, partySessionService);
   activeTabTracker.registerEventHandlers();
   controlledTabService.registerEventHandlers();
 
@@ -44,7 +39,44 @@ export default defineBackground(() => {
   })();
 });
 
-function registerEventHandlers(
+async function runMutation(
+  state: BackgroundState,
+  handler: () => Promise<void>,
+): Promise<void> {
+  try {
+    await handler();
+  } catch (error) {
+    state.lastError = getErrorMessage(error);
+    syncPopupState(state);
+  }
+}
+
+function registerPopupHandlers(
+  state: BackgroundState,
+  settingsStore: SettingsStore,
+  partySessionService: PartySessionService,
+): void {
+  onMessage('popup:create-room', () =>
+    runMutation(state, () => partySessionService.createRoom()),
+  );
+
+  onMessage('popup:join-room', ({ data }) =>
+    runMutation(state, () => partySessionService.joinRoom(data.roomCode)),
+  );
+
+  onMessage('popup:leave-room', () =>
+    runMutation(state, () => partySessionService.leaveRoom()),
+  );
+
+  onMessage('popup:update-settings', ({ data }) =>
+    runMutation(state, async () => {
+      await settingsStore.updateSettings(data);
+      syncPopupState(state);
+    }),
+  );
+}
+
+function registerContentHandlers(
   activeTabTracker: ActiveTabTracker,
   controlledTabService: ControlledTabService,
 ): void {
