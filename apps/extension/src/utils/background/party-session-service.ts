@@ -19,7 +19,7 @@ import type {
 
 import { getErrorMessage } from '../errors';
 import { syncPopupState } from './popup-state-item';
-import { createRealtimeConnection, type RealtimeConnection } from './realtime-connection';
+import { RealtimeConnection } from './realtime-connection';
 import type { BackgroundState } from './state';
 import {
   clearControlledTab,
@@ -217,7 +217,7 @@ export class PartySessionService {
 
     this.closeConnection();
 
-    const connection = createRealtimeConnection(serverUrl);
+    const connection = new RealtimeConnection(serverUrl);
     this.connection = connection;
     log.info({ serverUrl }, 'session:connection_created');
 
