@@ -1,5 +1,3 @@
-import { createDomVideoAdapter } from './dom-video';
-import { createSelectorMediaLocator } from './media-locators';
 import type { ServicePlugin } from './types';
 
 const NETFLIX_HOST_RE = /(^|\.)netflix\.com$/;
@@ -19,6 +17,7 @@ function extractNetflixMediaId(url: URL): string | undefined {
 }
 
 export const NETFLIX_SERVICE: ServicePlugin = {
+  id: 'netflix',
   descriptor: {
     id: 'netflix',
     label: 'Netflix',
@@ -28,19 +27,14 @@ export const NETFLIX_SERVICE: ServicePlugin = {
     watchPathHint: 'netflix.com/watch/…',
   },
   contentMatches: ['*://*.netflix.com/*'],
-  matchesService: (url) => parseNetflix(url) !== null,
-  matchesWatchPage: (url) => {
-    const parsed = parseNetflix(url);
-    return parsed ? extractNetflixMediaId(parsed) !== undefined : false;
+  issues: {
+    noMedia: 'Open a Netflix watch page to start a party.',
+    playerNotReady: 'Netflix player is still loading.',
   },
-  createAdapter: () =>
-    createDomVideoAdapter({
-      serviceId: 'netflix',
-      locator: createSelectorMediaLocator({
-        getMediaId: (loc) => extractNetflixMediaId(new URL(loc.href)),
-        getMediaTitle: (doc) => doc.title.replace(NETFLIX_TITLE_SUFFIX, '').trim() || 'Netflix',
-      }),
-      issueWhenNoMedia: 'Open a Netflix watch page to start a party.',
-      issueWhenPlayerNotReady: 'Netflix player is still loading.',
-    }),
+  parseUrl: (url) => {
+    const parsed = parseNetflix(url);
+    return parsed ? { mediaId: extractNetflixMediaId(parsed) } : null;
+  },
+  getVideo: () => document.querySelector<HTMLVideoElement>('video'),
+  getMediaTitle: () => document.title.replace(NETFLIX_TITLE_SUFFIX, '').trim() || 'Netflix',
 };

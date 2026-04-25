@@ -1,4 +1,4 @@
-import { createServiceContentScript } from '../utils/services/content-script';
+import { runServiceContentScript } from '../utils/services/dom-video';
 import { NETFLIX_SERVICE } from '../utils/services/netflix';
 
-export default createServiceContentScript(NETFLIX_SERVICE);
+export default runServiceContentScript(NETFLIX_SERVICE);

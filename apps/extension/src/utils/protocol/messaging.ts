@@ -9,6 +9,7 @@ export interface ExtensionProtocolMap {
   'content:playback-update': (payload: PlaybackUpdateDraft) => void;
   'content:request-sync': () => void;
   'party:request-context': () => ServiceContentContext;
+  'party:request-playback': () => PlaybackUpdateDraft | null;
   'party:apply-snapshot': (payload: { snapshot: PartySnapshot }) => ApplySnapshotResult;
   'party:state-updated': (payload: PopupState) => void;
 }

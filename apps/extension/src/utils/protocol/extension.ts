@@ -18,8 +18,6 @@ export interface ServiceContentContext {
   mediaId?: string;
   mediaTitle: string;
   playbackReady: boolean;
-  playing: boolean;
-  positionSec: number;
   issue?: string;
 }
 

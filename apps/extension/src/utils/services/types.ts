@@ -1,21 +1,4 @@
-import type { PartySnapshot, PlaybackUpdateDraft, ServiceId } from '@open-watch-party/shared';
-
-import type { ApplySnapshotResult, ServiceContentContext } from '../protocol/extension';
-
-/**
- * Runtime adapter that bridges a specific service's DOM to the background.
- * Each `ServicePlugin.createAdapter()` call returns a fresh instance per
- * content-script load.
- */
-export interface StreamingServiceAdapter {
-  readonly serviceId: ServiceId;
-  getContext(): ServiceContentContext;
-  applySnapshot(snapshot: PartySnapshot): Promise<ApplySnapshotResult>;
-  observe(
-    onContext: (context: ServiceContentContext) => void,
-    onPlaybackUpdate: (update: PlaybackUpdateDraft) => void,
-  ): () => void;
-}
+import type { ServiceId } from '@open-watch-party/shared';
 
 /** Presentation metadata rendered by the popup UI. */
 export interface ServiceDescriptor {
@@ -28,19 +11,31 @@ export interface ServiceDescriptor {
 }
 
 /**
- * Self-contained service integration. A plugin bundles everything the popup,
- * background, and content scripts need to recognize and drive a service:
- * descriptor (UI), URL classifiers (manifest + runtime), and an adapter
- * factory. Add a new service by exporting a `ServicePlugin` and appending it
- * to `SERVICE_PLUGINS`.
+ * Self-contained service integration. A plugin bundles the service metadata,
+ * URL classifier, DOM selectors, and the one optional playback override needed
+ * to drive a service from a content script.
  */
 export interface ServicePlugin {
+  readonly id: ServiceId;
   readonly descriptor: ServiceDescriptor;
   /** WXT-style match patterns; consumed at build time for the manifest. */
   readonly contentMatches: readonly string[];
-  /** True when `url` belongs to this service (watch page or not). */
-  matchesService(url: string): boolean;
-  /** True when `url` is a playable watch page on this service. */
-  matchesWatchPage(url: string): boolean;
-  createAdapter(): StreamingServiceAdapter;
+  readonly issues: {
+    /** Shown when the user is on the service but not on a playable page. */
+    readonly noMedia: string;
+    /** Shown when a watch URL matched but the `<video>` element isn't ready. */
+    readonly playerNotReady: string;
+  };
+  /**
+   * Returns null for URLs outside the service. A non-null result without
+   * `mediaId` means the URL belongs to the service but is not a watch page.
+   */
+  parseUrl(url: string): { mediaId?: string } | null;
+  getVideo(): HTMLVideoElement | null;
+  getMediaTitle(): string;
+  getStructureRoot?(): Node | null;
+  apply?(
+    video: HTMLVideoElement,
+    target: { positionSec: number; playing: boolean },
+  ): Promise<{ ok: true } | { ok: false; reason: string }>;
 }

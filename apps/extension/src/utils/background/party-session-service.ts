@@ -66,19 +66,13 @@ export class PartySessionService {
 
   async createRoom(): Promise<void> {
     await this.tabSync.refreshActiveTab(false);
-    const { context } = this.tabSync.requireControllableWatchTab();
+    const { context, playback } = await this.tabSync.requireControllableWatchTab();
 
     const response = await this.emitRoomCreate({
       memberId: this.ensureMemberId(),
       memberName: this.state.settings.memberName,
       serviceId: context.serviceId,
-      initialPlayback: {
-        serviceId: context.serviceId,
-        mediaId: context.mediaId,
-        title: context.mediaTitle,
-        playing: context.playing,
-        positionSec: context.positionSec,
-      },
+      initialPlayback: playback,
     });
 
     this.state.controlledTabId = this.state.activeTab.tabId;

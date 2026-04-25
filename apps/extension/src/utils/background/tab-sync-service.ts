@@ -4,7 +4,6 @@ import type { PartySnapshot, PlaybackUpdateDraft } from '@open-watch-party/share
 import type { ApplySnapshotResult, ServiceContentContext } from '../protocol/extension';
 import { sendMessage } from '../protocol/messaging';
 import { getPlugin, findPluginByUrl } from '../services/registry';
-import type { ServicePlugin } from '../services/types';
 import { emitStateChanged } from './notifier';
 import type { InternalState } from './state';
 import { createEmptyActiveTabSummary } from './state';
@@ -17,8 +16,8 @@ type ReadyServiceContentContext = ServiceContentContext & {
 };
 
 interface ControllableWatchTab {
-  plugin: ServicePlugin;
   context: ReadyServiceContentContext;
+  playback: PlaybackUpdateDraft;
 }
 
 interface TabSyncDependencies {
@@ -61,7 +60,7 @@ export class TabSyncService {
         const sessionPlugin = this.deps.state.session
           ? getPlugin(this.deps.state.session.serviceId)
           : null;
-        if (sessionPlugin && !sessionPlugin.matchesService(tab.url)) {
+        if (sessionPlugin && !sessionPlugin.parseUrl(tab.url)) {
           this.deps.state.lastWarning = `The controlled tab left ${sessionPlugin.descriptor.label}.`;
           emitStateChanged(this.deps.state);
         }
@@ -212,7 +211,7 @@ export class TabSyncService {
     }
   }
 
-  requireControllableWatchTab(): ControllableWatchTab {
+  async requireControllableWatchTab(): Promise<ControllableWatchTab> {
     if (!this.deps.state.activeTab.tabId || !this.deps.state.activeTab.isWatchPage) {
       throw new Error('Open a supported watch page before starting a party.');
     }
@@ -227,11 +226,17 @@ export class TabSyncService {
       throw new Error(`${plugin.descriptor.label} player is not ready yet.`);
     }
 
-    if (context.serviceId !== plugin.descriptor.id) {
+    if (context.serviceId !== plugin.id) {
       throw new Error('Active tab and reported service disagree. Refresh the tab.');
     }
 
-    return { plugin, context: context as ReadyServiceContentContext };
+    const playback = await this.requestPlaybackFromTab(this.deps.state.activeTab.tabId);
+
+    if (!playback || playback.mediaId !== context.mediaId) {
+      throw new Error(`${plugin.descriptor.label} playback state is not ready yet.`);
+    }
+
+    return { context: context as ReadyServiceContentContext, playback };
   }
 
   getControlledTabContext(): ServiceContentContext | null {
@@ -241,6 +246,15 @@ export class TabSyncService {
   private async requestContextFromTab(tabId: number): Promise<ServiceContentContext | null> {
     try {
       const response = await sendMessage('party:request-context', undefined, { tabId });
+      return response ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async requestPlaybackFromTab(tabId: number): Promise<PlaybackUpdateDraft | null> {
+    try {
+      const response = await sendMessage('party:request-playback', undefined, { tabId });
       return response ?? null;
     } catch {
       return null;
@@ -268,7 +282,7 @@ function summarizeTab(tab: BrowserTab) {
     tabId: tab.id ?? null,
     title: tab.title ?? '',
     url,
-    activeServiceId: classification?.plugin.descriptor.id ?? null,
+    activeServiceId: classification?.plugin.id ?? null,
     isWatchPage: classification?.isWatchPage ?? false,
   };
 }

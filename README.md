@@ -14,8 +14,8 @@ Open-source watch party stack built as a pnpm workspace:
 | YouTube | `youtube.com/watch?v=...`, `youtu.be/...`, `youtube.com/embed/...`, `youtube.com/live/...` |
 
 Adding a service is a self-contained change: drop a `ServicePlugin` under
-`apps/extension/src/lib/services/<id>.ts`, add a one-line
-`createServiceContentScript(MY_SERVICE)` entrypoint, register the plugin in
+`apps/extension/src/utils/services/<id>.ts`, add a one-line
+`runServiceContentScript(MY_SERVICE)` entrypoint, register the plugin in
 `SERVICE_PLUGINS`, and append its origin to `host_permissions` in
 `apps/extension/wxt.config.ts`.
 

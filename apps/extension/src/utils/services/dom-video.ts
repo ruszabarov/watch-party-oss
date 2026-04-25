@@ -1,25 +1,12 @@
-import type { PartySnapshot, ServiceId } from '@open-watch-party/shared';
+import type { PlaybackUpdateDraft } from '@open-watch-party/shared';
+import { defineContentScript } from 'wxt/utils/define-content-script';
 
-import { type ApplySnapshotResult, type ServiceContentContext } from '../protocol/extension';
-import type { MediaLocator } from './media-locators';
-import { createHtml5PlaybackController, type PlaybackController } from './playback-controllers';
-import type { StreamingServiceAdapter } from './types';
+import type { ServiceContentContext } from '../protocol/extension';
+import { onMessage, sendMessage } from '../protocol/messaging';
+import type { ServicePlugin } from './types';
 
-// Events that describe any meaningful change to the current media:
-//   play/pause/seeked — user-driven playback state.
-//   loadedmetadata/emptied/ended — source swaps (e.g. SPA nav that reuses
-//   the same <video> element) and natural playback completion.
 const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'emptied', 'ended'] as const;
-
-export interface DomVideoAdapterConfig {
-  readonly serviceId: ServiceId;
-  readonly locator: MediaLocator;
-  readonly playbackController?: PlaybackController;
-  /** Shown when the user is on the service but not on a playable page. */
-  readonly issueWhenNoMedia: string;
-  /** Shown when a watch URL matched but the `<video>` element isn't ready. */
-  readonly issueWhenPlayerNotReady: string;
-}
+const SEEK_CORRECTION_THRESHOLD_SEC = 1.5;
 
 interface DomPlaybackState {
   readonly video: HTMLVideoElement | null;
@@ -28,49 +15,34 @@ interface DomPlaybackState {
   readonly isWatchPage: boolean;
 }
 
-interface SnapshotPlaybackTarget {
-  readonly video: HTMLVideoElement;
-  readonly targetPositionSec: number;
-  readonly shouldPlay: boolean;
-}
-
-interface PendingAppliedPlaybackState {
-  readonly mediaId: string;
-  readonly playing: boolean;
-  readonly positionSec: number;
-}
-
-function buildPlaybackState(locator: MediaLocator): DomPlaybackState {
-  const video = locator.getVideo();
-  const mediaId = locator.getMediaId(window.location);
+function buildPlaybackState(plugin: ServicePlugin): DomPlaybackState {
+  const parsedUrl = plugin.parseUrl(window.location.href);
 
   return {
-    video,
-    mediaId,
-    mediaTitle: locator.getMediaTitle(document),
-    isWatchPage: Boolean(mediaId),
+    video: plugin.getVideo(),
+    mediaId: parsedUrl?.mediaId,
+    mediaTitle: plugin.getMediaTitle(),
+    isWatchPage: Boolean(parsedUrl?.mediaId),
   };
 }
 
 function buildContextFromState(
   state: DomPlaybackState,
-  config: DomVideoAdapterConfig,
+  plugin: ServicePlugin,
 ): ServiceContentContext {
   const { video, mediaId, mediaTitle, isWatchPage } = state;
   const issue = !isWatchPage
-    ? config.issueWhenNoMedia
+    ? plugin.issues.noMedia
     : video
       ? undefined
-      : config.issueWhenPlayerNotReady;
+      : plugin.issues.playerNotReady;
 
   return {
-    serviceId: config.serviceId,
+    serviceId: plugin.id,
     href: window.location.href,
     title: document.title,
     mediaTitle,
     playbackReady: Boolean(isWatchPage && video),
-    playing: video ? !video.paused : false,
-    positionSec: video ? Number(video.currentTime.toFixed(3)) : 0,
     ...(mediaId ? { mediaId } : {}),
     ...(issue ? { issue } : {}),
   };
@@ -82,66 +54,24 @@ function isSameContext(left: ServiceContentContext | null, right: ServiceContent
     left.mediaId === right.mediaId &&
     left.mediaTitle === right.mediaTitle &&
     left.playbackReady === right.playbackReady &&
-    left.playing === right.playing &&
     left.issue === right.issue
   );
 }
 
-function getPendingAppliedPlaybackState(
-  context: ServiceContentContext,
-): PendingAppliedPlaybackState | null {
-  if (!context.playbackReady || !context.mediaId) {
+function buildPlaybackUpdate(
+  state: DomPlaybackState,
+  plugin: ServicePlugin,
+): PlaybackUpdateDraft | null {
+  if (!state.video || !state.mediaId) {
     return null;
   }
 
   return {
-    mediaId: context.mediaId,
-    playing: context.playing,
-    positionSec: context.positionSec,
-  };
-}
-
-function matchesPendingAppliedPlaybackState(
-  pendingState: PendingAppliedPlaybackState | null,
-  context: ServiceContentContext,
-): boolean {
-  if (!pendingState || !context.playbackReady || !context.mediaId) {
-    return false;
-  }
-
-  if (pendingState.mediaId !== context.mediaId || pendingState.playing !== context.playing) {
-    return false;
-  }
-
-  return Math.abs(pendingState.positionSec - context.positionSec) <= 1.5;
-}
-
-function getSnapshotPlaybackTarget(
-  snapshot: PartySnapshot,
-  context: ServiceContentContext,
-  video: HTMLVideoElement | null,
-  issueWhenPlayerNotReady: string,
-): SnapshotPlaybackTarget | ApplySnapshotResult {
-  if (!video || !context.playbackReady) {
-    return {
-      applied: false,
-      reason: issueWhenPlayerNotReady,
-      context,
-    };
-  }
-
-  if (context.mediaId && snapshot.playback.mediaId !== context.mediaId) {
-    return {
-      applied: false,
-      reason: 'Current media does not match the room playback.',
-      context,
-    };
-  }
-
-  return {
-    video,
-    targetPositionSec: snapshot.playback.positionSec,
-    shouldPlay: snapshot.playback.playing,
+    serviceId: plugin.id,
+    mediaId: state.mediaId,
+    title: state.mediaTitle,
+    positionSec: Number(state.video.currentTime.toFixed(3)),
+    playing: !state.video.paused,
   };
 }
 
@@ -154,46 +84,62 @@ function observeUrlChanges(onChange: () => void): () => void {
   };
 }
 
-/**
- * Generic adapter for services whose media state can be described by a
- * locator (discovery + observation root) and a playback controller (command
- * transport). The adapter owns the shared event wiring, context emission, and
- * snapshot bookkeeping; services only swap the pieces that truly vary.
- */
-export function createDomVideoAdapter(config: DomVideoAdapterConfig): StreamingServiceAdapter {
-  const playbackController = config.playbackController ?? createHtml5PlaybackController();
+function applyHtml5Playback(
+  video: HTMLVideoElement,
+  target: { positionSec: number; playing: boolean },
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (Math.abs(video.currentTime - target.positionSec) > SEEK_CORRECTION_THRESHOLD_SEC) {
+    video.currentTime = target.positionSec;
+  }
 
-  const readPlaybackState = (): DomPlaybackState => buildPlaybackState(config.locator);
+  if (target.playing && video.paused) {
+    return video
+      .play()
+      .then(() => ({ ok: true }) as const)
+      .catch(() => ({
+        ok: false,
+        reason: 'Browser blocked playback start on this tab.',
+      }));
+  }
 
-  const getContextFromState = (state: DomPlaybackState): ServiceContentContext =>
-    buildContextFromState(state, config);
+  if (!target.playing && !video.paused) {
+    video.pause();
+  }
 
-  const readContext = (): ServiceContentContext => getContextFromState(readPlaybackState());
+  return Promise.resolve({ ok: true });
+}
 
-  let pendingAppliedPlaybackState: PendingAppliedPlaybackState | null = null;
+export function runServiceContentScript(plugin: ServicePlugin) {
+  return defineContentScript({
+    matches: [...plugin.contentMatches],
+    main() {
+      const readPlaybackState = (): DomPlaybackState => buildPlaybackState(plugin);
+      const getContextFromState = (state: DomPlaybackState): ServiceContentContext =>
+        buildContextFromState(state, plugin);
+      const readContext = (): ServiceContentContext => getContextFromState(readPlaybackState());
+      const readPlaybackUpdate = (): PlaybackUpdateDraft | null =>
+        buildPlaybackUpdate(readPlaybackState(), plugin);
 
-  const consumePendingAppliedPlaybackState = (context: ServiceContentContext) => {
-    if (matchesPendingAppliedPlaybackState(pendingAppliedPlaybackState, context)) {
-      pendingAppliedPlaybackState = null;
-      return true;
-    }
+      let lastReadyMediaKey: string | null = null;
 
-    if (pendingAppliedPlaybackState && context.mediaId !== pendingAppliedPlaybackState.mediaId) {
-      pendingAppliedPlaybackState = null;
-    }
+      const emitContentContext = (context: ServiceContentContext) => {
+        const readyMediaKey =
+          context.playbackReady && context.mediaId ? `${context.href}::${context.mediaId}` : null;
 
-    return false;
-  };
+        if (readyMediaKey && lastReadyMediaKey && readyMediaKey !== lastReadyMediaKey) {
+          void sendMessage('content:request-sync').catch(() => undefined);
+        }
 
-  const rememberPendingAppliedPlaybackState = (context: ServiceContentContext) => {
-    pendingAppliedPlaybackState = getPendingAppliedPlaybackState(context);
-  };
+        lastReadyMediaKey = readyMediaKey;
+        void sendMessage('content:context', context).catch(() => undefined);
+      };
 
-  return {
-    serviceId: config.serviceId,
-    getContext: readContext,
+      const emitPlaybackUpdate = (state: DomPlaybackState) => {
+        const update = buildPlaybackUpdate(state, plugin);
+        if (!update) return;
+        void sendMessage('content:playback-update', update).catch(() => undefined);
+      };
 
-    observe(onContext, onPlaybackUpdate) {
       let activeVideo: HTMLVideoElement | null = null;
       let lastContext: ServiceContentContext | null = null;
       let structureObservedRoot: Node | null = null;
@@ -202,19 +148,7 @@ export function createDomVideoAdapter(config: DomVideoAdapterConfig): StreamingS
       const emitContext = (context: ServiceContentContext) => {
         if (isSameContext(lastContext, context)) return;
         lastContext = context;
-        onContext(context);
-      };
-
-      const emitPlaybackUpdate = (context: ServiceContentContext) => {
-        if (consumePendingAppliedPlaybackState(context)) return;
-        if (!context.playbackReady || !context.mediaId) return;
-        onPlaybackUpdate({
-          serviceId: config.serviceId,
-          mediaId: context.mediaId,
-          title: context.mediaTitle,
-          positionSec: context.positionSec,
-          playing: context.playing,
-        });
+        emitContentContext(context);
       };
 
       const handleVideoEvent = () => {
@@ -222,7 +156,7 @@ export function createDomVideoAdapter(config: DomVideoAdapterConfig): StreamingS
         const context = getContextFromState(state);
         bindActiveVideo(state.video);
         emitContext(context);
-        emitPlaybackUpdate(context);
+        emitPlaybackUpdate(state);
       };
 
       const bindActiveVideo = (video: HTMLVideoElement | null) => {
@@ -242,7 +176,7 @@ export function createDomVideoAdapter(config: DomVideoAdapterConfig): StreamingS
 
       const structureObserver = new MutationObserver(scheduleRefresh);
       const bindStructureRoot = () => {
-        const nextRoot = config.locator.getStructureRoot() ?? document.body;
+        const nextRoot = plugin.getStructureRoot?.() ?? document.body;
         if (!nextRoot || nextRoot === structureObservedRoot) return;
         structureObserver.disconnect();
         structureObserver.observe(nextRoot, {
@@ -260,9 +194,6 @@ export function createDomVideoAdapter(config: DomVideoAdapterConfig): StreamingS
         emitContext(getContextFromState(state));
       };
 
-      // Coalesce synchronous bursts of mutations / URL events into one
-      // microtask so refreshes run promptly without depending on paint or
-      // timer scheduling.
       let refreshQueued = false;
       function scheduleRefresh() {
         if (stopped || refreshQueued) return;
@@ -274,13 +205,6 @@ export function createDomVideoAdapter(config: DomVideoAdapterConfig): StreamingS
         });
       }
 
-      // SPA re-renders swap or reparent the <video> element. Subtree childList
-      // catches these regardless of depth once the correct observation root is
-      // bound for the current service.
-
-      // Title edits don't always show up as structural changes (a script
-      // can just reassign `document.title`), so observe <head> for
-      // characterData too. Head is tiny, so this is cheap.
       const titleObserver = new MutationObserver(scheduleRefresh);
       titleObserver.observe(document.head, {
         childList: true,
@@ -291,52 +215,68 @@ export function createDomVideoAdapter(config: DomVideoAdapterConfig): StreamingS
       const stopObservingUrl = observeUrlChanges(scheduleRefresh);
 
       refresh();
+      void sendMessage('content:request-sync').catch(() => undefined);
 
-      return () => {
+      const removeContextListener = onMessage('party:request-context', () => {
+        return readContext();
+      });
+
+      const removePlaybackListener = onMessage('party:request-playback', () => {
+        return readPlaybackUpdate();
+      });
+
+      const removeSnapshotListener = onMessage('party:apply-snapshot', async ({ data }) => {
+        const state = readPlaybackState();
+        const context = getContextFromState(state);
+
+        if (!state.video || !context.playbackReady) {
+          return {
+            applied: false,
+            reason: plugin.issues.playerNotReady,
+            context,
+          };
+        }
+
+        if (context.mediaId && data.snapshot.playback.mediaId !== context.mediaId) {
+          return {
+            applied: false,
+            reason: 'Current media does not match the room playback.',
+            context,
+          };
+        }
+
+        const playbackResult = await (plugin.apply ?? applyHtml5Playback)(state.video, {
+          positionSec: data.snapshot.playback.positionSec,
+          playing: data.snapshot.playback.playing,
+        });
+
+        if (!playbackResult.ok) {
+          return {
+            applied: false,
+            reason: playbackResult.reason,
+            context: readContext(),
+          };
+        }
+
+        const appliedContext = readContext();
+        return { applied: true, context: appliedContext };
+      });
+
+      window.addEventListener('beforeunload', () => {
         stopped = true;
         structureObserver.disconnect();
         titleObserver.disconnect();
         stopObservingUrl();
+        removeContextListener();
+        removePlaybackListener();
+        removeSnapshotListener();
         if (activeVideo) {
           for (const e of VIDEO_EVENTS) {
             activeVideo.removeEventListener(e, handleVideoEvent);
           }
           activeVideo = null;
         }
-      };
-    },
-
-    async applySnapshot(snapshot: PartySnapshot): Promise<ApplySnapshotResult> {
-      const state = readPlaybackState();
-      const context = getContextFromState(state);
-      const target = getSnapshotPlaybackTarget(
-        snapshot,
-        context,
-        state.video,
-        config.issueWhenPlayerNotReady,
-      );
-
-      if (!('video' in target)) {
-        return target;
-      }
-
-      const playbackResult = await playbackController.apply({
-        video: target.video,
-        targetPositionSec: target.targetPositionSec,
-        shouldPlay: target.shouldPlay,
-        context,
       });
-      if (!playbackResult.ok) {
-        return {
-          applied: false,
-          reason: playbackResult.reason,
-          context: readContext(),
-        };
-      }
-
-      const appliedContext = readContext();
-      rememberPendingAppliedPlaybackState(appliedContext);
-      return { applied: true, context: appliedContext };
     },
-  };
+  });
 }

@@ -1,6 +1,3 @@
-import { createDomVideoAdapter } from './dom-video';
-import { createSelectorMediaLocator } from './media-locators';
-import { createHtml5PlaybackController, type PlaybackController } from './playback-controllers';
 import type { ServicePlugin } from './types';
 
 const YOUTUBE_HOST_RE = /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/;
@@ -68,27 +65,8 @@ function getYoutubePlayerApi(): YouTubePlayerElement | null {
   return isYouTubePlayerElement(player) ? player : null;
 }
 
-const html5PlaybackController = createHtml5PlaybackController();
-
-const youtubePlaybackController: PlaybackController = {
-  async apply(params) {
-    const player = getYoutubePlayerApi();
-    if (!player) {
-      return html5PlaybackController.apply(params);
-    }
-
-    player.seekTo(params.targetPositionSec, true);
-    if (params.shouldPlay) {
-      player.playVideo();
-    } else {
-      player.pauseVideo();
-    }
-
-    return { ok: true };
-  },
-};
-
 export const YOUTUBE_SERVICE: ServicePlugin = {
+  id: 'youtube',
   descriptor: {
     id: 'youtube',
     label: 'YouTube',
@@ -98,24 +76,34 @@ export const YOUTUBE_SERVICE: ServicePlugin = {
     watchPathHint: 'youtube.com/watch?v=…',
   },
   contentMatches: ['*://*.youtube.com/*', '*://youtu.be/*', '*://*.youtube-nocookie.com/*'],
-  matchesService: (url) => parseYoutube(url) !== null,
-  matchesWatchPage: (url) => {
-    const parsed = parseYoutube(url);
-    return parsed ? extractYoutubeMediaId(parsed) !== undefined : false;
+  issues: {
+    noMedia: 'Open a youtube.com/watch?v=... page to start a party.',
+    playerNotReady: 'YouTube player is still loading.',
   },
-  createAdapter: () =>
-    createDomVideoAdapter({
-      serviceId: 'youtube',
-      locator: createSelectorMediaLocator({
-        // YouTube keeps a hidden miniplayer <video> around; prefer the main
-        // movie container before falling back to any <video>.
-        videoSelector: '#movie_player video, video.html5-main-video, video',
-        structureRootSelector: '#movie_player',
-        getMediaId: (loc) => extractYoutubeMediaId(new URL(loc.href)),
-        getMediaTitle: (doc) => doc.title.replace(YOUTUBE_TITLE_SUFFIX, '').trim(),
-      }),
-      playbackController: youtubePlaybackController,
-      issueWhenNoMedia: 'Open a youtube.com/watch?v=… page to start a party.',
-      issueWhenPlayerNotReady: 'YouTube player is still loading.',
-    }),
+  parseUrl: (url) => {
+    const parsed = parseYoutube(url);
+    return parsed ? { mediaId: extractYoutubeMediaId(parsed) } : null;
+  },
+  getVideo: () =>
+    document.querySelector<HTMLVideoElement>('#movie_player video, video.html5-main-video, video'),
+  getMediaTitle: () => document.title.replace(YOUTUBE_TITLE_SUFFIX, '').trim(),
+  getStructureRoot: () => document.querySelector('#movie_player'),
+  apply: (_video, target) => {
+    const player = getYoutubePlayerApi();
+    if (!player) {
+      return Promise.resolve({
+        ok: false,
+        reason: 'YouTube player is still loading.',
+      });
+    }
+
+    player.seekTo(target.positionSec, true);
+    if (target.playing) {
+      player.playVideo();
+    } else {
+      player.pauseVideo();
+    }
+
+    return Promise.resolve({ ok: true });
+  },
 };

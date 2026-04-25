@@ -11,7 +11,7 @@ import type { ServiceDescriptor, ServicePlugin } from './types';
  *   1. Add a `ServiceId` to `packages/shared/src/protocol.ts`.
  *   2. Create a `ServicePlugin` at `apps/extension/src/utils/services/<id>.ts`.
  *   3. Add a one-line entrypoint at `src/entrypoints/<id>.content.ts` via
- *      `createServiceContentScript(MY_SERVICE)`.
+ *      `runServiceContentScript(MY_SERVICE)`.
  *   4. Append the plugin below and add its origin(s) to `host_permissions`
  *      in `wxt.config.ts`.
  */
@@ -22,7 +22,7 @@ export const SUPPORTED_SERVICE_DESCRIPTORS: readonly ServiceDescriptor[] = SERVI
 );
 
 export function getPlugin(id: ServiceId | null | undefined): ServicePlugin | null {
-  return SERVICE_PLUGINS.find((p) => p.descriptor.id === id) ?? null;
+  return SERVICE_PLUGINS.find((p) => p.id === id) ?? null;
 }
 
 export function getServiceDescriptor(id: ServiceId | null | undefined): ServiceDescriptor | null {
@@ -37,6 +37,11 @@ export function findPluginByUrl(
   url: string | null | undefined,
 ): { plugin: ServicePlugin; isWatchPage: boolean } | null {
   if (!url) return null;
-  const plugin = SERVICE_PLUGINS.find((p) => p.matchesService(url));
-  return plugin ? { plugin, isWatchPage: plugin.matchesWatchPage(url) } : null;
+  for (const plugin of SERVICE_PLUGINS) {
+    const parsedUrl = plugin.parseUrl(url);
+    if (parsedUrl) {
+      return { plugin, isWatchPage: Boolean(parsedUrl.mediaId) };
+    }
+  }
+  return null;
 }
