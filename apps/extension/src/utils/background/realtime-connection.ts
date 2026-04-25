@@ -12,8 +12,11 @@ import type {
   ServerToClientEvents,
 } from '@open-watch-party/shared';
 
+import { createLogger, elapsedMs, getLogError } from '../logger';
+
 const ACK_TIMEOUT_MS = 5_000;
 const CONNECT_TIMEOUT_MS = 5_000;
+const log = createLogger('background:realtime');
 
 export interface RealtimeConnection {
   readonly serverUrl: string;
@@ -55,11 +58,20 @@ class SocketIoRealtimeConnection implements RealtimeConnection {
       reconnection: true,
       transports: ['websocket'],
     });
+    log.info({ serverUrl }, 'realtime:connect_started');
 
     this.socket.on('connect', () => {
       const isReconnect = this.hasConnectedBefore;
       this.hasConnectedBefore = true;
       this.emitStatusChange('connected');
+      log.info(
+        {
+          serverUrl,
+          socketId: this.socket.id,
+          isReconnect,
+        },
+        'realtime:connected',
+      );
 
       if (isReconnect) {
         for (const handler of this.reconnectHandlers) {
@@ -69,10 +81,19 @@ class SocketIoRealtimeConnection implements RealtimeConnection {
     });
 
     this.socket.on('disconnect', () => {
+      log.info(
+        {
+          serverUrl,
+          socketId: this.socket.id,
+          manuallyDisconnected: this.manuallyDisconnected,
+        },
+        'realtime:disconnected',
+      );
       this.emitStatusChange(this.manuallyDisconnected ? 'disconnected' : 'reconnecting');
     });
 
     this.socket.on('connect_error', (error) => {
+      log.warn({ serverUrl, error: getLogError(error) }, 'realtime:connect_error');
       this.emitStatusChange('error', error.message);
     });
   }
@@ -101,18 +122,45 @@ class SocketIoRealtimeConnection implements RealtimeConnection {
     | OperationResult<PartySnapshot>
   > {
     await this.waitForConnect();
+    const startedAt = performance.now();
+    const event = args[0];
 
-    if (args[0] === 'room:create') {
-      return this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
-    }
-    if (args[0] === 'room:join') {
-      return this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
-    }
-    if (args[0] === 'room:leave') {
-      return this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
-    }
+    try {
+      let response:
+        | OperationResult<RoomResponse>
+        | OperationResult<{ roomCode: string }>
+        | OperationResult<PartySnapshot>;
 
-    return this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
+      if (args[0] === 'room:create') {
+        response = await this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
+      } else if (args[0] === 'room:join') {
+        response = await this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
+      } else if (args[0] === 'room:leave') {
+        response = await this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
+      } else {
+        response = await this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
+      }
+
+      log.debug(
+        {
+          event,
+          ok: response.ok,
+          durationMs: elapsedMs(startedAt),
+        },
+        'realtime:ack',
+      );
+      return response;
+    } catch (error) {
+      log.warn(
+        {
+          event,
+          durationMs: elapsedMs(startedAt),
+          error: getLogError(error),
+        },
+        'realtime:ack_failed',
+      );
+      throw error;
+    }
   }
 
   on(event: 'room:state', handler: ServerToClientEvents['room:state']): () => void;
@@ -121,9 +169,21 @@ class SocketIoRealtimeConnection implements RealtimeConnection {
     event: 'room:state' | 'playback:state',
     handler: (snapshot: PartySnapshot) => void,
   ): () => void {
-    this.socket.on(event, handler);
+    const loggedHandler = (snapshot: PartySnapshot) => {
+      log.debug(
+        {
+          event,
+          roomCode: snapshot.roomCode,
+          sequence: snapshot.sequence,
+          playbackSequence: snapshot.playback.sequence,
+        },
+        'realtime:event_received',
+      );
+      handler(snapshot);
+    };
+    this.socket.on(event, loggedHandler);
     return () => {
-      this.socket.off(event, handler);
+      this.socket.off(event, loggedHandler);
     };
   }
 
@@ -144,6 +204,7 @@ class SocketIoRealtimeConnection implements RealtimeConnection {
 
   disconnect(): void {
     this.manuallyDisconnected = true;
+    log.info({ serverUrl: this.serverUrl }, 'realtime:disconnect_requested');
     this.socket.disconnect();
   }
 
@@ -160,14 +221,20 @@ class SocketIoRealtimeConnection implements RealtimeConnection {
       };
       const handleConnect = () => {
         cleanup();
+        log.trace({ serverUrl: this.serverUrl }, 'realtime:wait_for_connect_ok');
         resolve();
       };
       const handleConnectError = (error: Error) => {
         cleanup();
+        log.warn(
+          { serverUrl: this.serverUrl, error: getLogError(error) },
+          'realtime:wait_for_connect_failed',
+        );
         reject(error);
       };
       const timeoutId = setTimeout(() => {
         cleanup();
+        log.warn({ serverUrl: this.serverUrl }, 'realtime:wait_for_connect_timeout');
         reject(new Error('Timed out connecting to the realtime server.'));
       }, CONNECT_TIMEOUT_MS);
 

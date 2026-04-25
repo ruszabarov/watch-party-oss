@@ -12,6 +12,7 @@
     "@open-watch-party/shared": "workspace:*",
     "limiter": "^3.0.0",
     "lru-cache": "^11.3.5",
+    "pino": "catalog:",
     "socket.io": "^4.8.3",
     "zod": "^4.3.6"
   }

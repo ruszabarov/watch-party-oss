@@ -16,6 +16,7 @@
     "@open-watch-party/shared": "workspace:*",
     "@tailwindcss/vite": "^4.2.2",
     "@webext-core/messaging": "^2.3.0",
+    "pino": "catalog:",
     "socket.io-client": "^4.8.3",
     "tailwindcss": "^4.2.2"
   },
