@@ -21,7 +21,15 @@ import { getErrorMessage } from '../errors';
 import { syncPopupState } from './popup-state-item';
 import { createRealtimeConnection, type RealtimeConnection } from './realtime-connection';
 import type { BackgroundState } from './state';
-import { normalizeServerUrl } from './state';
+import {
+  clearSession,
+  normalizeServerUrl,
+  selectSession,
+  setJoinedSession,
+  setSessionError,
+  updateSessionConnectionStatus,
+  updateSessionRoom,
+} from './state';
 import type { SettingsStore } from './settings-store';
 import type { ControlledTabService } from './controlled-tab-service';
 import { createLogger, getLogError } from '../logger';
@@ -38,34 +46,32 @@ export class PartySessionService {
   ) {}
 
   async connectForStoredSession(): Promise<void> {
-    if (!this.state.session) {
+    const session = selectSession(this.state);
+    if (!session) {
       log.trace('session:stored_session_missing');
       return;
     }
 
     log.info(
       {
-        roomCode: this.state.session.roomCode,
-        serviceId: this.state.session.serviceId,
+        roomCode: session.roomCode,
+        serviceId: session.serviceId,
       },
       'session:stored_session_connect',
     );
     try {
       await this.ensureConnection();
       const response = await this.emitRoomJoin({
-        roomCode: this.state.session.roomCode,
-        memberId: this.state.session.memberId,
+        roomCode: session.roomCode,
+        memberId: session.memberId,
         memberName: this.state.settings.memberName,
-        serviceId: this.state.session.serviceId,
+        serviceId: session.serviceId,
       });
 
       await this.applyRoomResponse(response);
     } catch (error) {
       log.warn({ error: getLogError(error) }, 'session:stored_session_connect_failed');
-      this.state.room = null;
-      this.state.session = null;
-      this.state.lastError = getErrorMessage(error);
-      this.state.connectionStatus = 'error';
+      setSessionError(this.state, getErrorMessage(error), { clearSession: true });
       await this.settingsStore.persist();
       syncPopupState(this.state);
     }
@@ -132,8 +138,9 @@ export class PartySessionService {
   }
 
   async leaveRoom(): Promise<void> {
-    log.info({ roomCode: this.state.session?.roomCode }, 'session:leave_room_started');
-    if (this.state.session && this.connection) {
+    const session = selectSession(this.state);
+    log.info({ roomCode: session?.roomCode }, 'session:leave_room_started');
+    if (session && this.connection) {
       try {
         await this.emitRoomLeave();
       } catch (error) {
@@ -142,19 +149,15 @@ export class PartySessionService {
       }
     }
 
-    this.state.room = null;
-    this.state.session = null;
     this.closeConnection();
-    this.state.connectionStatus = 'disconnected';
-    this.state.lastError = null;
-    this.state.lastWarning = null;
+    clearSession(this.state);
     await this.settingsStore.persist();
     syncPopupState(this.state);
     log.info('session:leave_room_ok');
   }
 
   async sendPlaybackUpdate(update: PlaybackUpdateDraft, isLocalRelay = false): Promise<void> {
-    const session = this.state.session;
+    const session = selectSession(this.state);
     if (!session) {
       log.trace(
         { mediaId: update.mediaId, isLocalRelay },
@@ -198,7 +201,7 @@ export class PartySessionService {
   }
 
   private ensureMemberId(): string {
-    return this.state.session?.memberId ?? `${browser.runtime.id}:${crypto.randomUUID()}`;
+    return selectSession(this.state)?.memberId ?? `${browser.runtime.id}:${crypto.randomUUID()}`;
   }
 
   private async ensureConnection(): Promise<void> {
@@ -220,7 +223,7 @@ export class PartySessionService {
         return;
       }
 
-      this.state.connectionStatus = status;
+      updateSessionConnectionStatus(this.state, status);
       this.state.lastError = errorMessage ?? (status === 'connected' ? null : this.state.lastError);
       syncPopupState(this.state);
       log.trace({ status, errorMessage }, 'session:connection_status');
@@ -231,7 +234,7 @@ export class PartySessionService {
         return;
       }
 
-      log.info({ roomCode: this.state.session?.roomCode }, 'session:connection_reconnected');
+      log.info({ roomCode: selectSession(this.state)?.roomCode }, 'session:connection_reconnected');
       await this.rejoinRoom();
     });
 
@@ -240,8 +243,7 @@ export class PartySessionService {
         return;
       }
 
-      this.state.room = snapshot;
-      this.state.lastWarning = null;
+      updateSessionRoom(this.state, snapshot);
       syncPopupState(this.state);
       log.debug(
         {
@@ -258,8 +260,7 @@ export class PartySessionService {
         return;
       }
 
-      this.state.room = snapshot;
-      this.state.lastWarning = null;
+      updateSessionRoom(this.state, snapshot);
       await this.controlledTab.applySnapshotToControlledTab();
       syncPopupState(this.state);
       log.debug(
@@ -275,18 +276,19 @@ export class PartySessionService {
   }
 
   private async rejoinRoom(): Promise<void> {
-    if (!this.state.session) {
+    const session = selectSession(this.state);
+    if (!session) {
       log.trace('session:rejoin_skipped_without_session');
       return;
     }
 
     try {
-      log.info({ roomCode: this.state.session.roomCode }, 'session:rejoin_started');
+      log.info({ roomCode: session.roomCode }, 'session:rejoin_started');
       const response = await this.emitRoomJoin({
-        roomCode: this.state.session.roomCode,
-        memberId: this.state.session.memberId,
+        roomCode: session.roomCode,
+        memberId: session.memberId,
         memberName: this.state.settings.memberName,
-        serviceId: this.state.session.serviceId,
+        serviceId: session.serviceId,
       });
 
       await this.applyRoomResponse(response);
@@ -294,16 +296,14 @@ export class PartySessionService {
       log.info({ roomCode: response.snapshot.roomCode }, 'session:rejoin_ok');
     } catch (error) {
       log.warn({ error: getLogError(error) }, 'session:rejoin_failed');
-      this.state.lastError = getErrorMessage(error);
-      this.state.connectionStatus = 'error';
+      setSessionError(this.state, getErrorMessage(error));
       syncPopupState(this.state);
     }
   }
 
   private async applyRoomResponse(response: RoomResponse): Promise<void> {
-    const currentSession = this.state.session;
-    this.state.room = response.snapshot;
-    this.state.session = {
+    const currentSession = selectSession(this.state);
+    const nextSession = {
       roomCode: response.snapshot.roomCode,
       memberId: response.memberId,
       serviceId: response.snapshot.serviceId,
@@ -315,9 +315,9 @@ export class PartySessionService {
           ? currentSession.playbackClientSequence
           : 0,
     };
-    this.state.connectionStatus = 'connected';
+    setJoinedSession(this.state, nextSession, response.snapshot);
     this.state.lastError = null;
-    await this.settingsStore.persistSession(this.state.session);
+    await this.settingsStore.persistSession(nextSession);
     syncPopupState(this.state);
     log.trace(
       {
@@ -367,8 +367,7 @@ export class PartySessionService {
   }
 
   private applyPlaybackSnapshot(snapshot: PartySnapshot): void {
-    this.state.room = snapshot;
-    this.state.lastWarning = null;
+    updateSessionRoom(this.state, snapshot);
     syncPopupState(this.state);
   }
 
@@ -390,7 +389,7 @@ export class PartySessionService {
   }
 
   private async incrementPlaybackClientSequence(
-    session: NonNullable<BackgroundState['session']>,
+    session: NonNullable<ReturnType<typeof selectSession>>,
   ): Promise<number> {
     const nextClientSequence = session.playbackClientSequence + 1;
     await this.settingsStore.persistSession({

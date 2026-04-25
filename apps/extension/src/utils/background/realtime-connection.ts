@@ -1,4 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
+import { match, P } from 'ts-pattern';
 import type {
   ClientToServerEvents,
   ConnectionStatus,
@@ -126,20 +127,7 @@ class SocketIoRealtimeConnection implements RealtimeConnection {
     const event = args[0];
 
     try {
-      let response:
-        | OperationResult<RoomResponse>
-        | OperationResult<{ roomCode: string }>
-        | OperationResult<PartySnapshot>;
-
-      if (args[0] === 'room:create') {
-        response = await this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
-      } else if (args[0] === 'room:join') {
-        response = await this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
-      } else if (args[0] === 'room:leave') {
-        response = await this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
-      } else {
-        response = await this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck(args[0], args[1]);
-      }
+      const response = await this.emitRequest(args);
 
       log.debug(
         {
@@ -250,6 +238,35 @@ class SocketIoRealtimeConnection implements RealtimeConnection {
       handler(status, errorMessage);
     }
   }
+
+  private emitRequest(
+    args: ['room:create', CreateRoomRequest],
+  ): Promise<OperationResult<RoomResponse>>;
+  private emitRequest(args: ['room:join', JoinRoomRequest]): Promise<OperationResult<RoomResponse>>;
+  private emitRequest(
+    args: ['room:leave', LeaveRoomRequest],
+  ): Promise<OperationResult<{ roomCode: string }>>;
+  private emitRequest(
+    args: ['playback:update', PlaybackUpdateRequest],
+  ): Promise<OperationResult<PartySnapshot>>;
+  private emitRequest(args: RealtimeRequestArgs): Promise<RealtimeResponse>;
+  private emitRequest(args: RealtimeRequestArgs): Promise<RealtimeResponse> {
+    return match(args)
+      .returnType<Promise<RealtimeResponse>>()
+      .with(['room:create', P.select()], (payload) =>
+        this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck('room:create', payload),
+      )
+      .with(['room:join', P.select()], (payload) =>
+        this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck('room:join', payload),
+      )
+      .with(['room:leave', P.select()], (payload) =>
+        this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck('room:leave', payload),
+      )
+      .with(['playback:update', P.select()], (payload) =>
+        this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck('playback:update', payload),
+      )
+      .exhaustive();
+  }
 }
 
 type RealtimeRequestArgs =
@@ -257,3 +274,8 @@ type RealtimeRequestArgs =
   | [event: 'room:join', payload: JoinRoomRequest]
   | [event: 'room:leave', payload: LeaveRoomRequest]
   | [event: 'playback:update', payload: PlaybackUpdateRequest];
+
+type RealtimeResponse =
+  | OperationResult<RoomResponse>
+  | OperationResult<{ roomCode: string }>
+  | OperationResult<PartySnapshot>;

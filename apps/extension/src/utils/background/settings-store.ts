@@ -1,7 +1,13 @@
 import { storage } from '#imports';
 
 import type { BackgroundState, SessionInfo, StoredSettings } from './state';
-import { normalizeMemberName, normalizeServerUrl } from './state';
+import {
+  normalizeMemberName,
+  normalizeServerUrl,
+  selectSession,
+  setStoredSession,
+  updatePersistedSession,
+} from './state';
 
 const settingsItem = storage.defineItem<StoredSettings>('local:watch-party-settings');
 
@@ -18,7 +24,7 @@ export class SettingsStore {
 
     this.state.settings.memberName = normalizeMemberName(stored.memberName);
     this.state.settings.serverUrl = normalizeServerUrl(stored.serverUrl);
-    this.state.session = stored.session;
+    setStoredSession(this.state, stored.session);
   }
 
   async updateSettings(next: { serverUrl: string; memberName: string }): Promise<void> {
@@ -30,7 +36,7 @@ export class SettingsStore {
   }
 
   async persistSession(session: SessionInfo | null): Promise<void> {
-    this.state.session = session;
+    updatePersistedSession(this.state, session);
     await this.persist();
   }
 
@@ -38,7 +44,7 @@ export class SettingsStore {
     const storedSettings: StoredSettings = {
       memberName: this.state.settings.memberName,
       serverUrl: this.state.settings.serverUrl,
-      session: this.state.session,
+      session: selectSession(this.state),
     };
 
     await settingsItem.setValue(storedSettings);

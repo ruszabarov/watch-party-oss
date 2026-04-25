@@ -5,7 +5,7 @@ import { createLogger, getLogError } from '../logger';
 import { sendMessage } from '../protocol/messaging';
 import { getPlugin } from '../services/registry';
 import { syncPopupState } from './popup-state-item';
-import type { BackgroundState } from './state';
+import { selectSession, type BackgroundState } from './state';
 import type { ActiveTabTracker } from './active-tab-tracker';
 
 type ReadyServiceContentContext = ServiceContentContext & {
@@ -57,9 +57,8 @@ export class ControlledTabService {
       }
 
       if (tabId === this.deps.state.controlledTabId && tab.url) {
-        const sessionPlugin = this.deps.state.session
-          ? getPlugin(this.deps.state.session.serviceId)
-          : null;
+        const session = selectSession(this.deps.state);
+        const sessionPlugin = session ? getPlugin(session.serviceId) : null;
         if (sessionPlugin && !sessionPlugin.parseUrl(tab.url)) {
           log.warn({ tabId, url: tab.url }, 'controlled_tab:left_service');
           this.deps.state.lastWarning = `The controlled tab left ${sessionPlugin.descriptor.label}.`;
@@ -72,9 +71,8 @@ export class ControlledTabService {
       if (this.deps.state.controlledTabId === tabId) {
         log.warn({ tabId }, 'controlled_tab:removed');
         this.controlledContext = null;
-        const sessionPlugin = this.deps.state.session
-          ? getPlugin(this.deps.state.session.serviceId)
-          : null;
+        const session = selectSession(this.deps.state);
+        const sessionPlugin = session ? getPlugin(session.serviceId) : null;
         this.deps.state.controlledTabId = null;
         this.deps.state.contentContext = null;
         this.deps.state.lastWarning = sessionPlugin
@@ -169,9 +167,8 @@ export class ControlledTabService {
       return;
     }
 
-    const sessionPlugin = this.deps.state.session
-      ? getPlugin(this.deps.state.session.serviceId)
-      : null;
+    const session = selectSession(this.deps.state);
+    const sessionPlugin = session ? getPlugin(session.serviceId) : null;
 
     if (this.controlledContext && this.controlledContext.mediaId !== room.playback.mediaId) {
       log.debug(

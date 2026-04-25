@@ -14,6 +14,7 @@
     "lru-cache": "^11.3.5",
     "pino": "catalog:",
     "socket.io": "^4.8.3",
+    "ts-pattern": "catalog:",
     "zod": "^4.3.6"
   }
 }

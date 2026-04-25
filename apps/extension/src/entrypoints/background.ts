@@ -6,7 +6,13 @@ import { onMessage } from '../utils/protocol/messaging';
 import { syncPopupState } from '../utils/background/popup-state-item';
 import { PartySessionService } from '../utils/background/party-session-service';
 import { SettingsStore } from '../utils/background/settings-store';
-import { createBackgroundState, type BackgroundState } from '../utils/background/state';
+import {
+  createBackgroundState,
+  selectConnectionStatus,
+  selectRoom,
+  selectSession,
+  type BackgroundState,
+} from '../utils/background/state';
 import { ActiveTabTracker } from '../utils/background/active-tab-tracker';
 import { ControlledTabService } from '../utils/background/controlled-tab-service';
 
@@ -22,7 +28,7 @@ export default defineBackground(() => {
   const controlledTabService = new ControlledTabService(
     {
       state,
-      getRoom: () => state.room,
+      getRoom: () => selectRoom(state),
       onControlledPlaybackUpdate: async (update) => {
         await partySessionService.sendPlaybackUpdate(update, true);
       },
@@ -42,8 +48,8 @@ export default defineBackground(() => {
     await partySessionService.connectForStoredSession();
     log.trace(
       {
-        hasSession: Boolean(state.session),
-        connectionStatus: state.connectionStatus,
+        hasSession: selectSession(state) !== null,
+        connectionStatus: selectConnectionStatus(state),
       },
       'background:hydrated',
     );

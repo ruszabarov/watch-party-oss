@@ -1,5 +1,6 @@
 import type { ZodType } from 'zod';
 import { Server, type Socket } from 'socket.io';
+import { match, P } from 'ts-pattern';
 import {
   applyPlaybackUpdate,
   createRoomRequestSchema,
@@ -10,7 +11,6 @@ import {
   playbackUpdateRequestSchema,
   removeRoomMember,
   roomHasMember,
-  type Acknowledge,
   type ClientToServerEvents,
   type CreateRoomRequest,
   type JoinRoomRequest,
@@ -49,6 +49,63 @@ const SOCKET_SESSION_REQUIRED_ERROR = 'Socket session not found.';
 const PLAYBACK_UPDATE_RATE_LIMIT_ERROR = 'Playback update rate limit exceeded.';
 export const DEFAULT_MAX_ROOMS = 1_000;
 const log = logger.child({ scope: 'socket' });
+
+type Ack<T> = (response: { ok: true; data: T } | { ok: false; error: string }) => void;
+type AckHandlerContext<TPayload> = {
+  io: RealtimeServer;
+  state: RealtimeState;
+  socket: ConnectionSocket;
+  payload: TPayload;
+};
+
+class SocketDomainError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SocketDomainError';
+  }
+}
+
+class InvalidPayloadError extends SocketDomainError {
+  constructor() {
+    super(INVALID_PAYLOAD_ERROR);
+  }
+}
+
+class SocketSessionRequiredError extends SocketDomainError {
+  constructor() {
+    super(SOCKET_SESSION_REQUIRED_ERROR);
+  }
+}
+
+class RoomNotFoundError extends SocketDomainError {
+  constructor() {
+    super('Room not found.');
+  }
+}
+
+class RoomServiceMismatchError extends SocketDomainError {
+  constructor() {
+    super('This room is using a different service.');
+  }
+}
+
+class RoomMemberRequiredError extends SocketDomainError {
+  constructor() {
+    super('Member is not part of this room.');
+  }
+}
+
+class PlaybackServiceMismatchError extends SocketDomainError {
+  constructor() {
+    super('Service mismatch.');
+  }
+}
+
+class PlaybackUpdateRateLimitedError extends SocketDomainError {
+  constructor() {
+    super(PLAYBACK_UPDATE_RATE_LIMIT_ERROR);
+  }
+}
 
 export type RealtimeStateOptions = {
   maxRooms?: number;
@@ -97,45 +154,41 @@ export function createConnectionHandler(io: RealtimeServer, state: RealtimeState
     log.info({ socketId: socket.id }, 'socket:connected');
     socket.on(
       'room:create',
-      withValidatedPayload<CreateRoomRequest, RoomResponse>(
+      withAckHandler<CreateRoomRequest, RoomResponse>(
         'room:create',
         createRoomRequestSchema,
-        (payload, acknowledge) => {
-          handleRoomCreate(io, state, socket, payload, acknowledge);
-        },
+        { io, state, socket },
+        handleRoomCreate,
       ),
     );
 
     socket.on(
       'room:join',
-      withValidatedPayload<JoinRoomRequest, RoomResponse>(
+      withAckHandler<JoinRoomRequest, RoomResponse>(
         'room:join',
         joinRoomRequestSchema,
-        (payload, acknowledge) => {
-          handleRoomJoin(io, state, socket, payload, acknowledge);
-        },
+        { io, state, socket },
+        handleRoomJoin,
       ),
     );
 
     socket.on(
       'room:leave',
-      withValidatedPayload<LeaveRoomRequest, { roomCode: string }>(
+      withAckHandler<LeaveRoomRequest, { roomCode: string }>(
         'room:leave',
         leaveRoomRequestSchema,
-        (payload, acknowledge) => {
-          handleRoomLeave(io, state, socket, payload, acknowledge);
-        },
+        { io, state, socket },
+        handleRoomLeave,
       ),
     );
 
     socket.on(
       'playback:update',
-      withValidatedPayload<PlaybackUpdateRequest, ReturnType<typeof toPartySnapshot>>(
+      withAckHandler<PlaybackUpdateRequest, ReturnType<typeof toPartySnapshot>>(
         'playback:update',
         playbackUpdateRequestSchema,
-        (payload, acknowledge) => {
-          handlePlaybackUpdate(state, socket, payload, acknowledge);
-        },
+        { io, state, socket },
+        handlePlaybackUpdate,
       ),
     );
 
@@ -168,44 +221,39 @@ export function createConnectionHandler(io: RealtimeServer, state: RealtimeState
   };
 }
 
-export function withValidatedPayload<TPayload, TResponse>(
+function withAckHandler<TPayload, TResponse>(
   event: string,
   schema: ZodType<TPayload>,
-  handler: (payload: TPayload, acknowledge: Acknowledge<TResponse>) => void,
+  context: Omit<AckHandlerContext<TPayload>, 'payload'>,
+  handler: (context: AckHandlerContext<TPayload>) => TResponse,
 ) {
-  return (payload: unknown, acknowledge: Acknowledge<TResponse>): void => {
-    const result = schema.safeParse(payload);
-    if (!result.success) {
-      log.warn({ event }, 'socket:invalid_payload');
-      acknowledge({ ok: false, error: INVALID_PAYLOAD_ERROR });
-      return;
-    }
+  return (payload: unknown, acknowledge: Ack<TResponse>): void => {
+    try {
+      const result = schema.safeParse(payload);
+      if (!result.success) {
+        throw new InvalidPayloadError();
+      }
 
-    handler(result.data, acknowledge);
+      const data = handler({ ...context, payload: result.data });
+      acknowledge({ ok: true, data });
+      logAckSuccess(event, context.socket, data);
+    } catch (error) {
+      const failure = toAckFailure(error);
+      logAckFailure(event, context.socket, error, failure);
+      acknowledge({ ok: false, error: failure.message });
+    }
   };
 }
 
-function handleRoomCreate(
-  io: RealtimeServer,
-  state: RealtimeState,
-  socket: ConnectionSocket,
-  payload: CreateRoomRequest,
-  acknowledge: Acknowledge<RoomResponse>,
-): void {
-  let room: RoomState;
-
-  try {
-    const roomCode = state.roomStore.generateUniqueRoomCode();
-    room = createRoomState(roomCode, payload);
-    state.roomStore.set(room);
-  } catch (error) {
-    log.error({ socketId: socket.id, error: getLogError(error) }, 'room:create_failed');
-    acknowledge({
-      ok: false,
-      error: error instanceof Error ? error.message : 'Room creation failed.',
-    });
-    return;
-  }
+function handleRoomCreate({
+  io,
+  state,
+  socket,
+  payload,
+}: AckHandlerContext<CreateRoomRequest>): RoomResponse {
+  const roomCode = state.roomStore.generateUniqueRoomCode();
+  const room = createRoomState(roomCode, payload);
+  state.roomStore.set(room);
 
   upsertRoomMember(room, payload.memberId, payload.memberName);
   refreshRoomActivity(state, room);
@@ -213,7 +261,6 @@ function handleRoomCreate(
   moveSocketSession(io, state, socket, room.roomCode, payload.memberId);
 
   const snapshot = toPartySnapshot(room);
-  acknowledge({ ok: true, data: { memberId: payload.memberId, snapshot } });
   socket.to(room.roomCode).emit('room:state', snapshot);
   log.info(
     {
@@ -225,36 +272,17 @@ function handleRoomCreate(
     },
     'room:create_ok',
   );
+  return { memberId: payload.memberId, snapshot };
 }
 
-function handleRoomJoin(
-  io: RealtimeServer,
-  state: RealtimeState,
-  socket: ConnectionSocket,
-  payload: JoinRoomRequest,
-  acknowledge: Acknowledge<RoomResponse>,
-): void {
-  const room = state.roomStore.get(payload.roomCode);
-
-  if (!room) {
-    log.warn({ socketId: socket.id, roomCode: payload.roomCode }, 'room:join_missing_room');
-    acknowledge({ ok: false, error: 'Room not found.' });
-    return;
-  }
-
-  if (payload.serviceId && room.serviceId !== payload.serviceId) {
-    log.warn(
-      {
-        socketId: socket.id,
-        roomCode: payload.roomCode,
-        requestedServiceId: payload.serviceId,
-        roomServiceId: room.serviceId,
-      },
-      'room:join_service_mismatch',
-    );
-    acknowledge({ ok: false, error: 'This room is using a different service.' });
-    return;
-  }
+function handleRoomJoin({
+  io,
+  state,
+  socket,
+  payload,
+}: AckHandlerContext<JoinRoomRequest>): RoomResponse {
+  const room = requireRoom(state, payload.roomCode);
+  assertRoomServiceMatch(room, payload.serviceId);
 
   upsertRoomMember(room, payload.memberId, payload.memberName);
   refreshRoomActivity(state, room);
@@ -262,7 +290,6 @@ function handleRoomJoin(
   moveSocketSession(io, state, socket, payload.roomCode, payload.memberId);
 
   const snapshot = toPartySnapshot(room);
-  acknowledge({ ok: true, data: { memberId: payload.memberId, snapshot } });
   socket.to(payload.roomCode).emit('room:state', snapshot);
   log.info(
     {
@@ -274,28 +301,16 @@ function handleRoomJoin(
     },
     'room:join_ok',
   );
+  return { memberId: payload.memberId, snapshot };
 }
 
-function handleRoomLeave(
-  io: RealtimeServer,
-  state: RealtimeState,
-  socket: ConnectionSocket,
-  _payload: LeaveRoomRequest,
-  acknowledge: Acknowledge<{ roomCode: string }>,
-): void {
-  const session = getSocketSession(state, socket.id);
-  if (!session) {
-    log.warn({ socketId: socket.id }, 'room:leave_missing_session');
-    acknowledge({ ok: false, error: SOCKET_SESSION_REQUIRED_ERROR });
-    return;
-  }
+function handleRoomLeave({ io, state, socket }: AckHandlerContext<LeaveRoomRequest>): {
+  roomCode: string;
+} {
+  const session = requireSocketSession(state, socket.id);
 
   removeSocketSession(state, socket.id);
   leaveRoom(io, state, session.roomCode, session.memberId);
-  acknowledge({
-    ok: true,
-    data: { roomCode: session.roomCode },
-  });
   log.info(
     {
       socketId: socket.id,
@@ -305,122 +320,145 @@ function handleRoomLeave(
     },
     'room:leave_ok',
   );
+  return { roomCode: session.roomCode };
 }
 
-function handlePlaybackUpdate(
-  state: RealtimeState,
-  socket: ConnectionSocket,
-  payload: PlaybackUpdateRequest,
-  acknowledge: Acknowledge<ReturnType<typeof toPartySnapshot>>,
-): void {
-  const session = getSocketSession(state, socket.id);
-  if (!session) {
-    log.warn({ socketId: socket.id }, 'playback:update_missing_session');
-    acknowledge({ ok: false, error: SOCKET_SESSION_REQUIRED_ERROR });
-    return;
-  }
+function handlePlaybackUpdate({
+  state,
+  socket,
+  payload,
+}: AckHandlerContext<PlaybackUpdateRequest>): ReturnType<typeof toPartySnapshot> {
+  const session = requireSocketSession(state, socket.id);
+  const room = requireRoom(state, session.roomCode);
+  assertRoomMember(room, session.memberId);
+  assertPlaybackServiceMatch(room, payload);
+  assertPlaybackUpdateAllowed(session);
 
-  const room = state.roomStore.get(session.roomCode);
+  const previousPlayback = room.playback;
+  const playback = applyPlaybackUpdate(room, payload.update, session.memberId);
+  const snapshot = toPartySnapshot(room);
 
-  if (!room) {
-    log.warn(
-      { socketId: socket.id, roomCode: session.roomCode, memberId: session.memberId },
-      'playback:update_missing_room',
-    );
-    acknowledge({ ok: false, error: 'Room not found.' });
-    return;
-  }
-
-  if (!roomHasMember(room, session.memberId)) {
-    log.warn(
-      { socketId: socket.id, roomCode: session.roomCode, memberId: session.memberId },
-      'playback:update_non_member',
-    );
-    acknowledge({ ok: false, error: 'Member is not part of this room.' });
-    return;
-  }
-
-  if (payload.update.serviceId !== room.serviceId) {
-    log.warn(
-      {
-        socketId: socket.id,
-        roomCode: session.roomCode,
-        memberId: session.memberId,
-        updateServiceId: payload.update.serviceId,
-        roomServiceId: room.serviceId,
-      },
-      'playback:update_service_mismatch',
-    );
-    acknowledge({ ok: false, error: 'Service mismatch.' });
-    return;
-  }
-
-  if (!session.allowPlaybackUpdate()) {
-    log.warn(
-      { socketId: socket.id, roomCode: session.roomCode, memberId: session.memberId },
-      'playback:update_rate_limited',
-    );
-    acknowledge({ ok: false, error: PLAYBACK_UPDATE_RATE_LIMIT_ERROR });
-    return;
-  }
-
-  try {
-    const previousPlayback = room.playback;
-    const playback = applyPlaybackUpdate(room, payload.update, session.memberId);
-
-    const snapshot = toPartySnapshot(room);
-    acknowledge({ ok: true, data: snapshot });
-
-    if (playback === previousPlayback) {
-      log.debug(
-        {
-          socketId: socket.id,
-          roomCode: room.roomCode,
-          memberId: session.memberId,
-          mediaId: payload.update.mediaId,
-          clientSequence: payload.update.clientSequence,
-          roomSequence: room.sequence,
-        },
-        'playback:update_noop',
-      );
-      return;
-    }
-
-    refreshRoomActivity(state, room);
-    socket.to(room.roomCode).emit('playback:state', snapshot);
+  if (playback === previousPlayback) {
     log.debug(
       {
         socketId: socket.id,
         roomCode: room.roomCode,
         memberId: session.memberId,
-        mediaId: playback.mediaId,
-        playing: playback.playing,
-        positionSec: playback.positionSec,
-        playbackSequence: playback.sequence,
+        mediaId: payload.update.mediaId,
         clientSequence: payload.update.clientSequence,
+        roomSequence: room.sequence,
       },
-      'playback:update_ok',
+      'playback:update_noop',
     );
-  } catch (error) {
-    log.error(
-      {
-        socketId: socket.id,
-        roomCode: session.roomCode,
-        memberId: session.memberId,
-        error: getLogError(error),
-      },
-      'playback:update_failed',
-    );
-    acknowledge({
-      ok: false,
-      error: error instanceof Error ? error.message : 'Playback update failed.',
-    });
-    return;
+    return snapshot;
+  }
+
+  refreshRoomActivity(state, room);
+  socket.to(room.roomCode).emit('playback:state', snapshot);
+  log.debug(
+    {
+      socketId: socket.id,
+      roomCode: room.roomCode,
+      memberId: session.memberId,
+      mediaId: playback.mediaId,
+      playing: playback.playing,
+      positionSec: playback.positionSec,
+      playbackSequence: playback.sequence,
+      clientSequence: payload.update.clientSequence,
+    },
+    'playback:update_ok',
+  );
+  return snapshot;
+}
+
+function requireSocketSession(state: RealtimeState, socketId: string): SessionRecord {
+  const session = state.sessionsBySocket.get(socketId);
+  if (!session) {
+    throw new SocketSessionRequiredError();
+  }
+  return session;
+}
+
+function requireRoom(state: RealtimeState, roomCode: string): RoomState {
+  const room = state.roomStore.get(roomCode);
+  if (!room) {
+    throw new RoomNotFoundError();
+  }
+  return room;
+}
+
+function assertRoomServiceMatch(room: RoomState, serviceId: JoinRoomRequest['serviceId']): void {
+  if (serviceId && room.serviceId !== serviceId) {
+    throw new RoomServiceMismatchError();
   }
 }
 
-function getSocketSession(state: RealtimeState, socketId: string): SessionRecord | undefined {
-  return state.sessionsBySocket.get(socketId);
+function assertRoomMember(room: RoomState, memberId: string): void {
+  if (!roomHasMember(room, memberId)) {
+    throw new RoomMemberRequiredError();
+  }
+}
+
+function assertPlaybackServiceMatch(room: RoomState, payload: PlaybackUpdateRequest): void {
+  if (payload.update.serviceId !== room.serviceId) {
+    throw new PlaybackServiceMismatchError();
+  }
+}
+
+function assertPlaybackUpdateAllowed(session: SessionRecord): void {
+  if (!session.allowPlaybackUpdate()) {
+    throw new PlaybackUpdateRateLimitedError();
+  }
+}
+
+function toAckFailure(error: unknown): { message: string; isExpected: boolean } {
+  return match(error)
+    .with(P.instanceOf(SocketDomainError), (domainError) => ({
+      message: domainError.message,
+      isExpected: true,
+    }))
+    .with(P.instanceOf(Error), (caughtError) => ({
+      message: caughtError.message,
+      isExpected: false,
+    }))
+    .otherwise(() => ({
+      message: 'Request failed.',
+      isExpected: false,
+    }));
+}
+
+function logAckSuccess<TResponse>(
+  event: string,
+  socket: ConnectionSocket,
+  response: TResponse,
+): void {
+  log.trace(
+    {
+      event,
+      socketId: socket.id,
+      hasResponse: response != null,
+    },
+    'socket:ack_ok',
+  );
+}
+
+function logAckFailure(
+  event: string,
+  socket: ConnectionSocket,
+  error: unknown,
+  failure: { isExpected: boolean },
+): void {
+  const fields = {
+    event,
+    socketId: socket.id,
+    error: getLogError(error),
+  };
+  if (failure.isExpected) {
+    log.warn(fields, 'socket:ack_rejected');
+    return;
+  }
+
+  log.error(fields, 'socket:ack_failed');
 }
 
 function moveSocketSession(

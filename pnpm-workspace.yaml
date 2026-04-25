@@ -5,3 +5,4 @@ packages:
 catalogs:
   default:
     pino: ^10.3.1
+    ts-pattern: ^5.9.0
