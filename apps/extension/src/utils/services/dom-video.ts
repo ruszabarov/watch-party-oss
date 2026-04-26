@@ -5,309 +5,185 @@ import type { ServiceContentContext } from '../protocol/extension';
 import { onMessage, sendMessage } from '../protocol/messaging';
 import type { ServicePlugin } from './types';
 
-const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'emptied', 'ended'] as const;
-const SEEK_CORRECTION_THRESHOLD_SEC = 1.5;
-
-interface DomPlaybackState {
-  readonly video: HTMLVideoElement | null;
-  readonly mediaId: string | undefined;
-  readonly mediaTitle: string;
-}
-
-function buildPlaybackState(plugin: ServicePlugin): DomPlaybackState {
-  const parsedUrl = plugin.parseUrl(window.location.href);
-
-  return {
-    video: plugin.getVideo(),
-    mediaId: parsedUrl?.mediaId,
-    mediaTitle: plugin.getMediaTitle(),
-  };
-}
-
-function buildContextFromState(
-  state: DomPlaybackState,
-  plugin: ServicePlugin,
-): ServiceContentContext | null {
-  const { video, mediaId, mediaTitle } = state;
-  if (!video || !mediaId) {
-    return null;
-  }
-
-  return {
-    serviceId: plugin.id,
-    href: window.location.href,
-    title: document.title,
-    mediaTitle,
-    mediaId,
-  };
-}
-
-function isSameContext(
-  left: ServiceContentContext | null,
-  right: ServiceContentContext | null,
-): boolean {
-  return (
-    left?.href === right?.href &&
-    left?.mediaId === right?.mediaId &&
-    left?.mediaTitle === right?.mediaTitle
-  );
-}
-
-function buildPlaybackUpdate(
-  state: DomPlaybackState,
-  plugin: ServicePlugin,
-): PlaybackUpdateDraft | null {
-  if (!state.video || !state.mediaId) {
-    return null;
-  }
-
-  return {
-    serviceId: plugin.id,
-    mediaId: state.mediaId,
-    title: state.mediaTitle,
-    positionSec: Number(state.video.currentTime.toFixed(3)),
-    playing: !state.video.paused,
-  };
-}
-
-function observeUrlChanges(onChange: () => void): () => void {
-  const { navigation } = window;
-  navigation.addEventListener('navigatesuccess', onChange);
-
-  return () => {
-    navigation.removeEventListener('navigatesuccess', onChange);
-  };
-}
-
-function applyHtml5Playback(
-  video: HTMLVideoElement,
-  target: { positionSec: number; playing: boolean },
-): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (Math.abs(video.currentTime - target.positionSec) > SEEK_CORRECTION_THRESHOLD_SEC) {
-    video.currentTime = target.positionSec;
-  }
-
-  if (target.playing && video.paused) {
-    return video
-      .play()
-      .then(() => ({ ok: true }) as const)
-      .catch(() => ({
-        ok: false,
-        reason: 'Browser blocked playback start on this tab.',
-      }));
-  }
-
-  if (!target.playing && !video.paused) {
-    video.pause();
-  }
-
-  return Promise.resolve({ ok: true });
-}
+const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'ended'] as const;
+const SEEK_THRESHOLD_SEC = 1.5;
 
 export function runServiceContentScript(plugin: ServicePlugin) {
   return defineContentScript({
     matches: [...plugin.contentMatches],
     main() {
-      const readPlaybackState = (): DomPlaybackState => buildPlaybackState(plugin);
-      const getContextFromState = (state: DomPlaybackState): ServiceContentContext | null =>
-        buildContextFromState(state, plugin);
-      const readContext = (): ServiceContentContext | null =>
-        getContextFromState(readPlaybackState());
-      const readPlaybackUpdate = (): PlaybackUpdateDraft | null =>
-        buildPlaybackUpdate(readPlaybackState(), plugin);
+      let activeVideo: HTMLVideoElement | null = null;
+      let lastContextKey: string | null = null;
+      let suppressNextEvent = false;
+      let refreshFrame: number | null = null;
+      let stopped = false;
 
-      let lastMediaKey: string | null = null;
-      let pendingAppliedPlaybackState: {
-        readonly mediaId: string;
-        readonly playing: boolean;
-        readonly positionSec: number;
-      } | null = null;
 
-      const emitContentContext = (context: ServiceContentContext | null) => {
-        const mediaKey = context ? `${context.href}::${context.mediaId}` : null;
+      const readContext = (): ServiceContentContext | null => {
+        const mediaId = plugin.parseUrl(window.location.href)?.mediaId;
+        if (!activeVideo || !mediaId) return null;
 
-        if (mediaKey && lastMediaKey && mediaKey !== lastMediaKey) {
-          void sendMessage('content:request-sync').catch(() => undefined);
+        return {
+          serviceId: plugin.id,
+          href: window.location.href,
+          title: document.title,
+          mediaTitle: plugin.getMediaTitle(),
+          mediaId,
+        };
+      };
+
+      const readPlayback = (): PlaybackUpdateDraft | null => {
+        const mediaId = plugin.parseUrl(window.location.href)?.mediaId;
+        if (!activeVideo || !mediaId) return null;
+
+        return {
+          serviceId: plugin.id,
+          mediaId,
+          title: plugin.getMediaTitle(),
+          positionSec: Number(activeVideo.currentTime.toFixed(3)),
+          playing: !activeVideo.paused,
+        };
+      };
+
+      const applyHtml5Playback = async (
+        video: HTMLVideoElement,
+        target: { positionSec: number; playing: boolean },
+      ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+        if (Math.abs(video.currentTime - target.positionSec) > SEEK_THRESHOLD_SEC) {
+          video.currentTime = target.positionSec;
         }
 
-        lastMediaKey = mediaKey;
+        if (target.playing && video.paused) {
+          try {
+            await video.play();
+          } catch {
+            return { ok: false, reason: 'Browser blocked playback start on this tab.' };
+          }
+        }
+
+        if (!target.playing && !video.paused) {
+          video.pause();
+        }
+
+        return { ok: true };
+      };
+
+      const sendContextIfChanged = () => {
+        const context = readContext();
+        const key = context ? `${context.href}::${context.mediaId}` : null;
+
+        if (key === lastContextKey) return;
+        lastContextKey = key;
+
         void sendMessage('content:context', context).catch(() => undefined);
       };
 
-      const emitPlaybackUpdate = (state: DomPlaybackState) => {
-        const update = buildPlaybackUpdate(state, plugin);
-        if (!update) {
+      const sendPlaybackUpdate = () => {
+        if (suppressNextEvent) {
+          suppressNextEvent = false;
           return;
         }
 
-        if (pendingAppliedPlaybackState) {
-          if (
-            pendingAppliedPlaybackState.mediaId === update.mediaId &&
-            pendingAppliedPlaybackState.playing === update.playing &&
-            Math.abs(pendingAppliedPlaybackState.positionSec - update.positionSec) <=
-              SEEK_CORRECTION_THRESHOLD_SEC
-          ) {
-            pendingAppliedPlaybackState = null;
-            return;
-          }
-
-          if (update.mediaId !== pendingAppliedPlaybackState.mediaId) {
-            pendingAppliedPlaybackState = null;
-          }
+        const update = readPlayback();
+        if (update) {
+          void sendMessage('content:playback-update', update).catch(() => undefined);
         }
-
-        void sendMessage('content:playback-update', update).catch(() => undefined);
-      };
-
-      let activeVideo: HTMLVideoElement | null = null;
-      let lastContext: ServiceContentContext | null = null;
-      let structureObservedRoot: Node | null = null;
-      let stopped = false;
-
-      const emitContext = (context: ServiceContentContext | null) => {
-        if (isSameContext(lastContext, context)) return;
-        lastContext = context;
-        emitContentContext(context);
       };
 
       const handleVideoEvent = () => {
-        const state = readPlaybackState();
-        const context = getContextFromState(state);
-        bindActiveVideo(state.video);
-        emitContext(context);
-        emitPlaybackUpdate(state);
+        refresh();
+        sendPlaybackUpdate();
       };
 
-      const bindActiveVideo = (video: HTMLVideoElement | null) => {
+      const bindVideo = () => {
+        const video = plugin.getVideo();
         if (video === activeVideo) return;
+
         if (activeVideo) {
-          for (const e of VIDEO_EVENTS) {
-            activeVideo.removeEventListener(e, handleVideoEvent);
-          }
+          for (const e of VIDEO_EVENTS) activeVideo.removeEventListener(e, handleVideoEvent);
         }
+
         activeVideo = video;
+
         if (activeVideo) {
-          for (const e of VIDEO_EVENTS) {
-            activeVideo.addEventListener(e, handleVideoEvent);
-          }
+          for (const e of VIDEO_EVENTS) activeVideo.addEventListener(e, handleVideoEvent);
         }
       };
 
-      const structureObserver = new MutationObserver(scheduleRefresh);
-      const bindStructureRoot = () => {
-        const nextRoot = plugin.getStructureRoot?.() ?? document.body;
-        if (!nextRoot || nextRoot === structureObservedRoot) return;
-        structureObserver.disconnect();
-        structureObserver.observe(nextRoot, {
-          childList: true,
-          subtree: true,
-        });
-        structureObservedRoot = nextRoot;
-      };
-
-      const refresh = () => {
+      function refresh() {
         if (stopped) return;
-        const state = readPlaybackState();
-        bindStructureRoot();
-        bindActiveVideo(state.video);
-        emitContext(getContextFromState(state));
-      };
-
-      let refreshQueued = false;
-      function scheduleRefresh() {
-        if (stopped || refreshQueued) return;
-        refreshQueued = true;
-        queueMicrotask(() => {
-          refreshQueued = false;
-          if (stopped) return;
-          refresh();
-        });
+        bindVideo();
+        sendContextIfChanged();
       }
 
-      const titleObserver = new MutationObserver(scheduleRefresh);
-      titleObserver.observe(document.head, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-      });
+      const scheduleRefresh = () => {
+        if (stopped || refreshFrame !== null) return;
+        refreshFrame = window.requestAnimationFrame(() => {
+          refreshFrame = null;
+          refresh();
+        });
+      };
 
-      const stopObservingUrl = observeUrlChanges(scheduleRefresh);
+      const pageObserver = new MutationObserver(scheduleRefresh);
+      pageObserver.observe(document.documentElement, { childList: true, subtree: true });
+
+      const navigation = (window as Window & { navigation?: EventTarget }).navigation;
+      navigation?.addEventListener('navigatesuccess', scheduleRefresh);
+      window.addEventListener('popstate', scheduleRefresh);
 
       refresh();
       void sendMessage('content:request-sync').catch(() => undefined);
 
-      const removeContextListener = onMessage('party:request-context', () => {
-        return readContext();
-      });
+      const cleanups: Array<() => void> = [];
 
-      const removePlaybackListener = onMessage('party:request-playback', () => {
-        return readPlaybackUpdate();
-      });
+      cleanups.push(onMessage('party:request-context', () => readContext()));
+      cleanups.push(onMessage('party:request-playback', () => readPlayback()));
 
-      const removeSnapshotListener = onMessage('party:apply-snapshot', async ({ data }) => {
-        const state = readPlaybackState();
-        const context = getContextFromState(state);
+      cleanups.push(
+        onMessage('party:apply-snapshot', async ({ data }) => {
+          const context = readContext();
 
-        if (!state.video || !context) {
-          return {
-            applied: false,
-            reason: plugin.playerNotReadyMessage,
-            context,
-          };
-        }
+          if (!activeVideo || !context) {
+            return { applied: false, reason: plugin.playerNotReadyMessage, context };
+          }
 
-        const nextAppliedPlaybackState = {
-          mediaId: data.snapshot.playback.mediaId,
-          playing: data.snapshot.playback.playing,
-          positionSec: data.snapshot.playback.positionSec,
-        };
-
-        pendingAppliedPlaybackState = nextAppliedPlaybackState;
-
-        let playbackResult = plugin.apply
-          ? await plugin.apply(state.video, {
-              positionSec: data.snapshot.playback.positionSec,
-              playing: data.snapshot.playback.playing,
-            })
-          : null;
-
-        if (!playbackResult) {
-          playbackResult = await applyHtml5Playback(state.video, {
+          const target = {
             positionSec: data.snapshot.playback.positionSec,
             playing: data.snapshot.playback.playing,
-          });
-        }
-
-        if (!playbackResult.ok) {
-          if (pendingAppliedPlaybackState === nextAppliedPlaybackState) {
-            pendingAppliedPlaybackState = null;
-          }
-          return {
-            applied: false,
-            reason: playbackResult.reason,
-            context: readContext(),
           };
-        }
 
-        const appliedContext = readContext();
-        return { applied: true, context: appliedContext };
-      });
+          suppressNextEvent = true;
 
-      window.addEventListener('beforeunload', () => {
-        stopped = true;
-        structureObserver.disconnect();
-        titleObserver.disconnect();
-        stopObservingUrl();
-        removeContextListener();
-        removePlaybackListener();
-        removeSnapshotListener();
-        if (activeVideo) {
-          for (const e of VIDEO_EVENTS) {
-            activeVideo.removeEventListener(e, handleVideoEvent);
+          const result = await applyHtml5Playback(activeVideo, target);
+
+          if (!result.ok) {
+            suppressNextEvent = false;
           }
-          activeVideo = null;
-        }
-      });
+
+          return result.ok
+            ? { applied: true, context: readContext() }
+            : { applied: false, reason: result.reason, context: readContext() };
+        }),
+      );
+
+      window.addEventListener(
+        'beforeunload',
+        () => {
+          stopped = true;
+          pageObserver.disconnect();
+          navigation?.removeEventListener('navigatesuccess', scheduleRefresh);
+          window.removeEventListener('popstate', scheduleRefresh);
+
+          if (refreshFrame !== null) window.cancelAnimationFrame(refreshFrame);
+
+          if (activeVideo) {
+            for (const e of VIDEO_EVENTS) activeVideo.removeEventListener(e, handleVideoEvent);
+          }
+
+          for (const fn of cleanups) fn();
+        },
+        { once: true },
+      );
     },
   });
 }

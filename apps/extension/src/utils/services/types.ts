@@ -29,9 +29,4 @@ export interface ServicePlugin {
   parseUrl(url: string): { mediaId?: string } | null;
   getVideo(): HTMLVideoElement | null;
   getMediaTitle(): string;
-  getStructureRoot?(): Node | null;
-  apply?(
-    video: HTMLVideoElement,
-    target: { positionSec: number; playing: boolean },
-  ): Promise<{ ok: true } | { ok: false; reason: string } | null>;
 }

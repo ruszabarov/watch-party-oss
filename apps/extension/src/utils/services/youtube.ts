@@ -3,14 +3,6 @@ import type { ServicePlugin } from './types';
 const YOUTUBE_HOST_RE = /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/;
 const YOUTUBE_TITLE_SUFFIX = /\s*-\s*YouTube$/i;
 
-interface YouTubePlayerApi {
-  seekTo(seconds: number, allowSeekAhead?: boolean): void;
-  playVideo(): void;
-  pauseVideo(): void;
-}
-
-type YouTubePlayerElement = HTMLElement & YouTubePlayerApi;
-
 function parseYoutube(rawUrl: string): URL | null {
   try {
     const url = new URL(rawUrl);
@@ -42,29 +34,6 @@ function extractYoutubeMediaId(url: URL): string | undefined {
   return undefined;
 }
 
-function isYouTubePlayerElement(value: Element | null): value is YouTubePlayerElement {
-  const seekTo = value ? Reflect.get(value, 'seekTo') : undefined;
-  const playVideo = value ? Reflect.get(value, 'playVideo') : undefined;
-  const pauseVideo = value ? Reflect.get(value, 'pauseVideo') : undefined;
-
-  if (
-    !value ||
-    !(value instanceof HTMLElement) ||
-    typeof seekTo !== 'function' ||
-    typeof playVideo !== 'function' ||
-    typeof pauseVideo !== 'function'
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function getYoutubePlayerApi(): YouTubePlayerElement | null {
-  const player = document.getElementById('movie_player');
-  return isYouTubePlayerElement(player) ? player : null;
-}
-
 export const YOUTUBE_SERVICE: ServicePlugin = {
   id: 'youtube',
   descriptor: {
@@ -84,20 +53,4 @@ export const YOUTUBE_SERVICE: ServicePlugin = {
   getVideo: () =>
     document.querySelector<HTMLVideoElement>('#movie_player video, video.html5-main-video, video'),
   getMediaTitle: () => document.title.replace(YOUTUBE_TITLE_SUFFIX, '').trim(),
-  getStructureRoot: () => document.querySelector('#movie_player'),
-  apply: (_video, target) => {
-    const player = getYoutubePlayerApi();
-    if (!player) {
-      return Promise.resolve(null);
-    }
-
-    player.seekTo(target.positionSec, true);
-    if (target.playing) {
-      player.playVideo();
-    } else {
-      player.pauseVideo();
-    }
-
-    return Promise.resolve({ ok: true });
-  },
 };
