@@ -24,7 +24,6 @@ import { RealtimeConnection } from './realtime-connection';
 import {
   clearControlledTab,
   clearSession,
-  normalizeServerUrl,
   selectSession,
   setControlledTab,
   setJoinedSession,
@@ -37,6 +36,7 @@ import {
 import type { SettingsStore } from './settings-store';
 import type { ControlledTabService } from './controlled-tab-service';
 import type { ActiveTabTracker } from './active-tab-tracker';
+import { SERVER_URL } from '../config';
 
 export class PartySessionService {
   private connection: RealtimeConnection | null = null;
@@ -105,7 +105,6 @@ export class PartySessionService {
       memberName: this.state.settings.memberName,
     });
 
-    setControlledTab(this.state, tabId);
     await this.applyRoomResponse(response);
 
     try {
@@ -141,7 +140,7 @@ export class PartySessionService {
     }
 
     const playbackContext = this.controlledTab.getControlledTabContext();
-    if (playbackContext?.mediaId && playbackContext.mediaId !== update.mediaId) {
+    if (playbackContext && playbackContext.mediaId !== update.mediaId) {
       this.state.lastWarning = 'Local title no longer matches the active room.';
       syncBackgroundState(this.state);
       return;
@@ -160,7 +159,7 @@ export class PartySessionService {
   }
 
   private async ensureConnection(): Promise<void> {
-    const serverUrl = normalizeServerUrl(this.state.settings.serverUrl);
+    const serverUrl = SERVER_URL;
 
     if (this.connection?.serverUrl === serverUrl) {
       return;

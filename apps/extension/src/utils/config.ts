@@ -1,2 +1,2 @@
-export const DEFAULT_SERVER_URL = __WATCH_PARTY_DEFAULT_SERVER_URL__;
-export const SHOW_SERVER_SETTINGS = __WATCH_PARTY_SHOW_SERVER_SETTINGS__;
+export const SERVER_URL =
+  __WATCH_PARTY_DEFAULT_SERVER_URL__.trim().replace(/\/+$/, '') || 'http://localhost:8787';

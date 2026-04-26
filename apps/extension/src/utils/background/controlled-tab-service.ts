@@ -14,26 +14,13 @@ import {
 import type { ActiveTabTracker } from './active-tab-tracker';
 import type { BackgroundBus } from './bus';
 
-type ReadyServiceContentContext = ServiceContentContext & {
-  playbackReady: true;
-  mediaId: string;
-};
-
-function isReadyServiceContentContext(
-  context: ServiceContentContext | null,
-): context is ReadyServiceContentContext {
-  return Boolean(context?.playbackReady && context.mediaId);
-}
-
 interface ControllableWatchTab {
   tabId: number;
-  context: ReadyServiceContentContext;
+  context: ServiceContentContext;
   playback: PlaybackUpdateDraft;
 }
 
 export class ControlledTabService {
-  private pendingControlledNavigationUrl: string | null = null;
-
   constructor(
     private readonly state: BackgroundState,
     private readonly bus: BackgroundBus,
@@ -46,17 +33,8 @@ export class ControlledTabService {
     });
 
     browser.tabs.onUpdated.addListener((tabId, _changeInfo, tab) => {
-      if (
-        tabId === this.state.controlledTabId &&
-        this.pendingControlledNavigationUrl &&
-        tab.url &&
-        tab.url === this.pendingControlledNavigationUrl
-      ) {
-        this.state.lastWarning = null;
-        syncBackgroundState(this.state);
-      }
-
-      if (tabId === this.state.controlledTabId && tab.url) {
+      const controlledTab = this.state.controlledTab;
+      if (tabId === controlledTab?.tabId && tab.url) {
         const session = selectSession(this.state);
         const sessionPlugin = session ? getPlugin(session.serviceId) : null;
         if (sessionPlugin && !sessionPlugin.parseUrl(tab.url)) {
@@ -67,7 +45,7 @@ export class ControlledTabService {
     });
 
     browser.tabs.onRemoved.addListener((tabId) => {
-      if (this.state.controlledTabId === tabId) {
+      if (this.state.controlledTab?.tabId === tabId) {
         const session = selectSession(this.state);
         const sessionPlugin = session ? getPlugin(session.serviceId) : null;
         clearControlledTab(this.state);
@@ -79,16 +57,23 @@ export class ControlledTabService {
     });
   }
 
-  recordContentContext(tabId: number, context: ServiceContentContext): void {
-    const isControlledTab = this.state.controlledTabId === tabId;
-    if (isControlledTab) {
-      this.state.controlledContext = context;
-      syncBackgroundState(this.state);
+  recordContentContext(tabId: number, context: ServiceContentContext | null): void {
+    if (this.state.controlledTab?.tabId !== tabId) {
+      return;
     }
+
+    if (!context) {
+      clearControlledTab(this.state);
+      syncBackgroundState(this.state);
+      return;
+    }
+
+    setControlledTab(this.state, tabId, context);
+    syncBackgroundState(this.state);
   }
 
   relayControlledPlaybackUpdate(tabId: number, update: PlaybackUpdateDraft): void {
-    if (tabId !== this.state.controlledTabId) {
+    if (tabId !== this.state.controlledTab?.tabId) {
       return;
     }
 
@@ -96,41 +81,42 @@ export class ControlledTabService {
   }
 
   async requestSync(tabId: number): Promise<void> {
-    if (!selectRoom(this.state)) {
+    const room = selectRoom(this.state);
+    if (!room) {
       return;
     }
 
-    if (this.state.controlledTabId == null) {
-      setControlledTab(this.state, tabId);
+    if (!this.state.controlledTab) {
+      const context = await this.requestContextFromTab(tabId);
+      if (context?.mediaId === room.playback.mediaId) {
+        setControlledTab(this.state, tabId, context);
+      }
     }
-    if (this.state.controlledTabId === tabId) {
-      this.pendingControlledNavigationUrl = null;
+
+    if (this.state.controlledTab?.tabId === tabId) {
+      syncBackgroundState(this.state);
     }
     await this.applySnapshotToControlledTab();
   }
 
   async applySnapshotToControlledTab(): Promise<void> {
     const room = selectRoom(this.state);
-    if (!room || this.state.controlledTabId == null) {
-      return;
-    }
-
-    if (this.pendingControlledNavigationUrl) {
+    const controlledTab = this.state.controlledTab;
+    if (!room || !controlledTab) {
       return;
     }
 
     const session = selectSession(this.state);
     const sessionPlugin = session ? getPlugin(session.serviceId) : null;
 
-    const controlledContext = this.state.controlledContext;
-    if (controlledContext && controlledContext.mediaId !== room.playback.mediaId) {
-      await this.navigateControlledTabToRoom(this.state.controlledTabId, room.watchUrl, {
+    if (controlledTab.context.mediaId !== room.playback.mediaId) {
+      await this.navigateControlledTabToRoom(controlledTab.tabId, room.watchUrl, {
         active: false,
       });
       return;
     }
 
-    const result = await this.applySnapshotToTab(this.state.controlledTabId, room);
+    const result = await this.applySnapshotToTab(controlledTab.tabId, room);
 
     if (!result) {
       this.state.lastWarning = sessionPlugin
@@ -140,7 +126,9 @@ export class ControlledTabService {
     }
 
     if (result.context) {
-      this.state.controlledContext = result.context;
+      setControlledTab(this.state, controlledTab.tabId, result.context);
+    } else {
+      clearControlledTab(this.state);
     }
 
     this.state.lastWarning = result.applied ? null : (result.reason ?? 'Sync was skipped.');
@@ -151,7 +139,9 @@ export class ControlledTabService {
     watchUrl: string,
     options: { active?: boolean } = {},
   ): Promise<void> {
-    this.pendingControlledNavigationUrl = watchUrl;
+    if (this.state.controlledTab?.tabId === tabId) {
+      clearControlledTab(this.state);
+    }
     this.state.lastWarning = null;
     syncBackgroundState(this.state);
 
@@ -161,7 +151,6 @@ export class ControlledTabService {
         ...(options.active === undefined ? { active: true } : { active: options.active }),
       });
     } catch (error) {
-      this.pendingControlledNavigationUrl = null;
       throw new Error('Could not open the room video in the current tab.', { cause: error });
     }
   }
@@ -180,7 +169,7 @@ export class ControlledTabService {
     }
 
     const context = await this.requestContextFromTab(tabId);
-    if (!isReadyServiceContentContext(context)) {
+    if (!context) {
       throw new Error(`${plugin.descriptor.label} player is not ready yet.`);
     }
 
@@ -198,7 +187,7 @@ export class ControlledTabService {
   }
 
   getControlledTabContext(): ServiceContentContext | null {
-    return this.state.controlledContext;
+    return this.state.controlledTab?.context ?? null;
   }
 
   private async requestContextFromTab(tabId: number): Promise<ServiceContentContext | null> {

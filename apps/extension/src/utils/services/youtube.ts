@@ -76,10 +76,7 @@ export const YOUTUBE_SERVICE: ServicePlugin = {
     watchPathHint: 'youtube.com/watch?v=…',
   },
   contentMatches: ['*://*.youtube.com/*', '*://youtu.be/*', '*://*.youtube-nocookie.com/*'],
-  issues: {
-    noMedia: 'Open a youtube.com/watch?v=... page to start a party.',
-    playerNotReady: 'YouTube player is still loading.',
-  },
+  playerNotReadyMessage: 'YouTube player is still loading.',
   parseUrl: (url) => {
     const parsed = parseYoutube(url);
     return parsed ? { mediaId: extractYoutubeMediaId(parsed) } : null;

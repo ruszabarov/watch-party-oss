@@ -3,7 +3,6 @@ import { storage } from '#imports';
 import type { BackgroundState, SessionInfo, StoredSettings } from './state';
 import {
   normalizeMemberName,
-  normalizeServerUrl,
   selectSession,
   setStoredSession,
   updatePersistedSession,
@@ -23,13 +22,11 @@ export class SettingsStore {
     }
 
     this.state.settings.memberName = normalizeMemberName(stored.memberName);
-    this.state.settings.serverUrl = normalizeServerUrl(stored.serverUrl);
     setStoredSession(this.state, stored.session);
   }
 
-  async updateSettings(next: { serverUrl: string; memberName: string }): Promise<void> {
+  async updateSettings(next: { memberName: string }): Promise<void> {
     this.state.settings = {
-      serverUrl: normalizeServerUrl(next.serverUrl),
       memberName: normalizeMemberName(next.memberName),
     };
     await this.persist();
@@ -43,7 +40,6 @@ export class SettingsStore {
   async persist(): Promise<void> {
     const storedSettings: StoredSettings = {
       memberName: this.state.settings.memberName,
-      serverUrl: this.state.settings.serverUrl,
       session: selectSession(this.state),
     };
 

@@ -12,16 +12,16 @@ import type { PartySnapshot, PlaybackUpdateDraft } from '@open-watch-party/share
 import type { ApplySnapshotResult, ServiceContentContext } from './extension';
 
 export interface ExtensionProtocolMap {
-  'content:context': (payload: ServiceContentContext) => void;
+  'content:context': (payload: ServiceContentContext | null) => void;
   'content:playback-update': (payload: PlaybackUpdateDraft) => void;
   'content:request-sync': () => void;
-  'party:request-context': () => ServiceContentContext;
+  'party:request-context': () => ServiceContentContext | null;
   'party:request-playback': () => PlaybackUpdateDraft | null;
   'party:apply-snapshot': (payload: { snapshot: PartySnapshot }) => ApplySnapshotResult;
   'popup:create-room': () => void;
   'popup:join-room': (payload: { roomCode: string }) => void;
   'popup:leave-room': () => void;
-  'popup:update-settings': (payload: { serverUrl: string; memberName: string }) => void;
+  'popup:update-settings': (payload: { memberName: string }) => void;
 }
 
 export const extensionMessaging = defineExtensionMessaging<ExtensionProtocolMap>();

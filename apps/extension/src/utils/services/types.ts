@@ -20,12 +20,8 @@ export interface ServicePlugin {
   readonly descriptor: ServiceDescriptor;
   /** WXT-style match patterns; consumed at build time for the manifest. */
   readonly contentMatches: readonly string[];
-  readonly issues: {
-    /** Shown when the user is on the service but not on a playable page. */
-    readonly noMedia: string;
-    /** Shown when a watch URL matched but the `<video>` element isn't ready. */
-    readonly playerNotReady: string;
-  };
+  /** Shown when a watch URL matched but the `<video>` element isn't ready. */
+  readonly playerNotReadyMessage: string;
   /**
    * Returns null for URLs outside the service. A non-null result without
    * `mediaId` means the URL belongs to the service but is not a watch page.

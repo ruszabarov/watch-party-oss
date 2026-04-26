@@ -12,7 +12,6 @@ interface DomPlaybackState {
   readonly video: HTMLVideoElement | null;
   readonly mediaId: string | undefined;
   readonly mediaTitle: string;
-  readonly isWatchPage: boolean;
 }
 
 function buildPlaybackState(plugin: ServicePlugin): DomPlaybackState {
@@ -22,39 +21,35 @@ function buildPlaybackState(plugin: ServicePlugin): DomPlaybackState {
     video: plugin.getVideo(),
     mediaId: parsedUrl?.mediaId,
     mediaTitle: plugin.getMediaTitle(),
-    isWatchPage: Boolean(parsedUrl?.mediaId),
   };
 }
 
 function buildContextFromState(
   state: DomPlaybackState,
   plugin: ServicePlugin,
-): ServiceContentContext {
-  const { video, mediaId, mediaTitle, isWatchPage } = state;
-  const issue = !isWatchPage
-    ? plugin.issues.noMedia
-    : video
-      ? undefined
-      : plugin.issues.playerNotReady;
+): ServiceContentContext | null {
+  const { video, mediaId, mediaTitle } = state;
+  if (!video || !mediaId) {
+    return null;
+  }
 
   return {
     serviceId: plugin.id,
     href: window.location.href,
     title: document.title,
     mediaTitle,
-    playbackReady: Boolean(isWatchPage && video),
-    ...(mediaId ? { mediaId } : {}),
-    ...(issue ? { issue } : {}),
+    mediaId,
   };
 }
 
-function isSameContext(left: ServiceContentContext | null, right: ServiceContentContext): boolean {
+function isSameContext(
+  left: ServiceContentContext | null,
+  right: ServiceContentContext | null,
+): boolean {
   return (
-    left?.href === right.href &&
-    left.mediaId === right.mediaId &&
-    left.mediaTitle === right.mediaTitle &&
-    left.playbackReady === right.playbackReady &&
-    left.issue === right.issue
+    left?.href === right?.href &&
+    left?.mediaId === right?.mediaId &&
+    left?.mediaTitle === right?.mediaTitle
   );
 }
 
@@ -114,28 +109,28 @@ export function runServiceContentScript(plugin: ServicePlugin) {
     matches: [...plugin.contentMatches],
     main() {
       const readPlaybackState = (): DomPlaybackState => buildPlaybackState(plugin);
-      const getContextFromState = (state: DomPlaybackState): ServiceContentContext =>
+      const getContextFromState = (state: DomPlaybackState): ServiceContentContext | null =>
         buildContextFromState(state, plugin);
-      const readContext = (): ServiceContentContext => getContextFromState(readPlaybackState());
+      const readContext = (): ServiceContentContext | null =>
+        getContextFromState(readPlaybackState());
       const readPlaybackUpdate = (): PlaybackUpdateDraft | null =>
         buildPlaybackUpdate(readPlaybackState(), plugin);
 
-      let lastReadyMediaKey: string | null = null;
+      let lastMediaKey: string | null = null;
       let pendingAppliedPlaybackState: {
         readonly mediaId: string;
         readonly playing: boolean;
         readonly positionSec: number;
       } | null = null;
 
-      const emitContentContext = (context: ServiceContentContext) => {
-        const readyMediaKey =
-          context.playbackReady && context.mediaId ? `${context.href}::${context.mediaId}` : null;
+      const emitContentContext = (context: ServiceContentContext | null) => {
+        const mediaKey = context ? `${context.href}::${context.mediaId}` : null;
 
-        if (readyMediaKey && lastReadyMediaKey && readyMediaKey !== lastReadyMediaKey) {
+        if (mediaKey && lastMediaKey && mediaKey !== lastMediaKey) {
           void sendMessage('content:request-sync').catch(() => undefined);
         }
 
-        lastReadyMediaKey = readyMediaKey;
+        lastMediaKey = mediaKey;
         void sendMessage('content:context', context).catch(() => undefined);
       };
 
@@ -169,7 +164,7 @@ export function runServiceContentScript(plugin: ServicePlugin) {
       let structureObservedRoot: Node | null = null;
       let stopped = false;
 
-      const emitContext = (context: ServiceContentContext) => {
+      const emitContext = (context: ServiceContentContext | null) => {
         if (isSameContext(lastContext, context)) return;
         lastContext = context;
         emitContentContext(context);
@@ -253,10 +248,10 @@ export function runServiceContentScript(plugin: ServicePlugin) {
         const state = readPlaybackState();
         const context = getContextFromState(state);
 
-        if (!state.video || !context.playbackReady) {
+        if (!state.video || !context) {
           return {
             applied: false,
-            reason: plugin.issues.playerNotReady,
+            reason: plugin.playerNotReadyMessage,
             context,
           };
         }

@@ -12,10 +12,8 @@ export interface ServiceContentContext {
   serviceId: ServiceId;
   href: string;
   title: string;
-  mediaId?: string;
   mediaTitle: string;
-  playbackReady: boolean;
-  issue?: string;
+  mediaId: string;
 }
 
 export interface ApplySnapshotResult {

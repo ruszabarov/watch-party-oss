@@ -3,7 +3,6 @@ import type { ConnectionStatus, PartySnapshot } from '@open-watch-party/shared';
 import { sanitizeMemberName, type ServiceId } from '@open-watch-party/shared';
 import { match, P } from 'ts-pattern';
 
-import { DEFAULT_SERVER_URL } from '../config';
 import type { ActiveTabSummary, ServiceContentContext } from '../protocol/extension';
 
 export type SessionInfo = {
@@ -15,7 +14,6 @@ export type SessionInfo = {
 
 export type StoredSettings = {
   memberName: string;
-  serverUrl: string;
   session: SessionInfo | null;
 };
 
@@ -38,13 +36,14 @@ export type BackgroundSessionState =
 
 export type BackgroundState = {
   settings: {
-    serverUrl: string;
     memberName: string;
   };
   sessionState: BackgroundSessionState;
   activeTab: ActiveTabSummary;
-  controlledTabId: number | null;
-  controlledContext: ServiceContentContext | null;
+  controlledTab: {
+    tabId: number;
+    context: ServiceContentContext;
+  } | null;
   lastError: string | null;
   lastWarning: string | null;
 };
@@ -52,13 +51,11 @@ export type BackgroundState = {
 export function createBackgroundState(): BackgroundState {
   return {
     settings: {
-      serverUrl: DEFAULT_SERVER_URL,
       memberName: createGuestName(),
     },
     sessionState: createIdleSessionState(),
     activeTab: createEmptyActiveTabSummary(),
-    controlledTabId: null,
-    controlledContext: null,
+    controlledTab: null,
     lastError: null,
     lastWarning: null,
   };
@@ -73,17 +70,15 @@ export function syncBackgroundState(state: BackgroundState): void {
 }
 
 export function clearControlledTab(state: BackgroundState): void {
-  state.controlledTabId = null;
-  state.controlledContext = null;
+  state.controlledTab = null;
 }
 
 export function setControlledTab(
   state: BackgroundState,
   tabId: number,
-  context: ServiceContentContext | null = null,
+  context: ServiceContentContext,
 ): void {
-  state.controlledTabId = tabId;
-  state.controlledContext = context;
+  state.controlledTab = { tabId, context };
 }
 
 export function createIdleSessionState(): BackgroundSessionState {
@@ -213,10 +208,6 @@ export function createEmptyActiveTabSummary(): ActiveTabSummary {
     activeServiceId: null,
     isWatchPage: false,
   };
-}
-
-export function normalizeServerUrl(value: string): string {
-  return (value || DEFAULT_SERVER_URL).trim().replace(/\/+$/, '') || DEFAULT_SERVER_URL;
 }
 
 export function normalizeMemberName(value: string): string {

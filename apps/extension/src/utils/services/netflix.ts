@@ -27,10 +27,7 @@ export const NETFLIX_SERVICE: ServicePlugin = {
     watchPathHint: 'netflix.com/watch/…',
   },
   contentMatches: ['*://*.netflix.com/*'],
-  issues: {
-    noMedia: 'Open a Netflix watch page to start a party.',
-    playerNotReady: 'Netflix player is still loading.',
-  },
+  playerNotReadyMessage: 'Netflix player is still loading.',
   parseUrl: (url) => {
     const parsed = parseNetflix(url);
     return parsed ? { mediaId: extractNetflixMediaId(parsed) } : null;
