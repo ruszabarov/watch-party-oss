@@ -38,6 +38,13 @@ export default defineConfig({
   manifest: {
     name: 'Open Watch Party',
     description: 'Cross-platform watch parties for Netflix and YouTube with realtime sync.',
+    icons: {
+      16: '/16.png',
+      32: '/32.png',
+      48: '/48.png',
+      96: '/96.png',
+      128: '/128.png',
+    },
     permissions: ['storage', 'tabs'],
     browser_specific_settings: {
       gecko: {
