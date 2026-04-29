@@ -37,6 +37,8 @@ import type { SettingsStore } from './settings-store';
 import type { ControlledTabService } from './controlled-tab-service';
 import { SERVER_URL } from '../config';
 
+const ACTIVE_ROOM_EXISTS_ERROR = 'Leave your current room before joining or creating another room.';
+
 export class PartySessionService {
   private connection: RealtimeConnection | null = null;
 
@@ -80,6 +82,8 @@ export class PartySessionService {
   }
 
   async createRoom(tabId: number): Promise<void> {
+    this.assertNoActiveSession();
+
     const { context, playback } = await this.controlledTab.requireControllableWatchTab(tabId);
 
     const response = await this.emitRoomCreate({
@@ -95,6 +99,8 @@ export class PartySessionService {
   }
 
   async joinRoom(roomCode: string, tabId: number): Promise<void> {
+    this.assertNoActiveSession();
+
     const response = await this.emitRoomJoin({
       roomCode: normalizeRoomCode(roomCode),
       memberId: this.ensureMemberId(),
@@ -152,6 +158,12 @@ export class PartySessionService {
 
   private ensureMemberId(): string {
     return selectSession(this.state)?.memberId ?? `${browser.runtime.id}:${crypto.randomUUID()}`;
+  }
+
+  private assertNoActiveSession(): void {
+    if (selectSession(this.state)) {
+      throw new Error(ACTIVE_ROOM_EXISTS_ERROR);
+    }
   }
 
   private async ensureConnection(): Promise<void> {

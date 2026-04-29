@@ -47,6 +47,7 @@ export type RealtimeState = {
 const INVALID_PAYLOAD_ERROR = 'Invalid request payload.';
 const SOCKET_SESSION_REQUIRED_ERROR = 'Socket session not found.';
 const PLAYBACK_UPDATE_RATE_LIMIT_ERROR = 'Playback update rate limit exceeded.';
+const ACTIVE_ROOM_EXISTS_ERROR = 'Leave your current room before joining or creating another room.';
 export const DEFAULT_MAX_ROOMS = 1_000;
 const log = logger.child({ scope: 'socket' });
 
@@ -104,6 +105,12 @@ class PlaybackServiceMismatchError extends SocketDomainError {
 class PlaybackUpdateRateLimitedError extends SocketDomainError {
   constructor() {
     super(PLAYBACK_UPDATE_RATE_LIMIT_ERROR);
+  }
+}
+
+class ActiveRoomExistsError extends SocketDomainError {
+  constructor() {
+    super(ACTIVE_ROOM_EXISTS_ERROR);
   }
 }
 
@@ -252,13 +259,15 @@ function handleRoomCreate({
   payload,
 }: AckHandlerContext<CreateRoomRequest>): RoomResponse {
   const roomCode = state.roomStore.generateUniqueRoomCode();
+  assertMemberCanBindRoom(state, socket.id, roomCode, payload.memberId);
+
   const room = createRoomState(roomCode, payload);
   state.roomStore.set(room);
 
   upsertRoomMember(room, payload.memberId, payload.memberName);
   refreshRoomActivity(state, room);
 
-  moveSocketSession(io, state, socket, room.roomCode, payload.memberId);
+  bindSocketSession(io, state, socket, room.roomCode, payload.memberId);
 
   const snapshot = toPartySnapshot(room);
   socket.to(room.roomCode).emit('room:state', snapshot);
@@ -283,11 +292,12 @@ function handleRoomJoin({
 }: AckHandlerContext<JoinRoomRequest>): RoomResponse {
   const room = requireRoom(state, payload.roomCode);
   assertRoomServiceMatch(room, payload.serviceId);
+  assertMemberCanBindRoom(state, socket.id, payload.roomCode, payload.memberId);
 
   upsertRoomMember(room, payload.memberId, payload.memberName);
   refreshRoomActivity(state, room);
 
-  moveSocketSession(io, state, socket, payload.roomCode, payload.memberId);
+  bindSocketSession(io, state, socket, payload.roomCode, payload.memberId);
 
   const snapshot = toPartySnapshot(room);
   socket.to(payload.roomCode).emit('room:state', snapshot);
@@ -411,6 +421,30 @@ function assertPlaybackUpdateAllowed(session: SessionRecord): void {
   }
 }
 
+function assertMemberCanBindRoom(
+  state: RealtimeState,
+  socketId: string,
+  roomCodeValue: string,
+  memberId: string,
+): void {
+  const roomCode = normalizeRoomCode(roomCodeValue);
+  const socketSession = state.sessionsBySocket.get(socketId);
+
+  if (
+    socketSession &&
+    (socketSession.roomCode !== roomCode || socketSession.memberId !== memberId)
+  ) {
+    throw new ActiveRoomExistsError();
+  }
+
+  // This is O(n) over active socket sessions; create/join are low-frequency paths.
+  for (const session of state.sessionsBySocket.values()) {
+    if (session.memberId === memberId && session.roomCode !== roomCode) {
+      throw new ActiveRoomExistsError();
+    }
+  }
+}
+
 function toAckFailure(error: unknown): { message: string; isExpected: boolean } {
   return match(error)
     .with(P.instanceOf(SocketDomainError), (domainError) => ({
@@ -461,7 +495,7 @@ function logAckFailure(
   log.error(fields, 'socket:ack_failed');
 }
 
-function moveSocketSession(
+function bindSocketSession(
   io: RealtimeServer,
   state: RealtimeState,
   socket: ConnectionSocket,
@@ -469,31 +503,11 @@ function moveSocketSession(
   memberId: string,
 ): void {
   const roomCode = normalizeRoomCode(roomCodeValue);
-  const priorSession = state.sessionsBySocket.get(socket.id);
-
-  if (priorSession && (priorSession.roomCode !== roomCode || priorSession.memberId !== memberId)) {
-    log.info(
-      {
-        socketId: socket.id,
-        previousRoomCode: priorSession.roomCode,
-        previousMemberId: priorSession.memberId,
-        nextRoomCode: roomCode,
-        nextMemberId: memberId,
-      },
-      'session:moved',
-    );
-    removeSocketSession(state, socket.id);
-
-    if (priorSession.roomCode !== roomCode) {
-      socket.leave(priorSession.roomCode);
-    }
-
-    leaveRoom(io, state, priorSession.roomCode, priorSession.memberId);
-  }
-
   const socketId = socket.id;
   const key = memberKey(roomCode, memberId);
   const priorSocketId = state.activeSocketByMember.get(key);
+  const allowPlaybackUpdate =
+    state.sessionsBySocket.get(socketId)?.allowPlaybackUpdate ?? createPlaybackUpdateTokenConsumer();
 
   if (priorSocketId && priorSocketId !== socketId) {
     log.info(
@@ -514,7 +528,7 @@ function moveSocketSession(
     socketId,
     roomCode,
     memberId,
-    allowPlaybackUpdate: priorSession?.allowPlaybackUpdate ?? createPlaybackUpdateTokenConsumer(),
+    allowPlaybackUpdate,
   });
   socket.join(roomCode);
   log.trace({ socketId, roomCode, memberId }, 'session:joined_socket_room');

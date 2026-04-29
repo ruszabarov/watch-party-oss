@@ -425,6 +425,65 @@ describe('socket handlers', () => {
     expect(socket.emitted[0]?.event).toBe('room:state');
   });
 
+  it('rejects room creation while the same member is active in another room', () => {
+    const io = new FakeIo();
+    const socket = new FakeSocket('socket-create-blocked');
+    const state = createRealtimeState();
+    const room = createRoomState('ROOM01', {
+      memberId: 'member-a',
+      memberName: 'Member A',
+      serviceId: 'youtube',
+      initialPlayback: {
+        serviceId: 'youtube',
+        mediaId: 'abc123',
+        title: 'Clip',
+        playing: true,
+        positionSec: 5,
+      },
+    });
+
+    upsertRoomMember(room, 'member-a', 'Member A');
+    state.roomStore.set(room);
+    state.sessionsBySocket.set(
+      socket.id,
+      createTestSessionRecord(socket.id, room.roomCode, 'member-a'),
+    );
+    state.activeSocketByMember.set(`${room.roomCode}:member-a`, socket.id);
+    createConnectionHandler(io as never, state)(socket as never);
+
+    const roomCreateHandler = socket.handlers.get('room:create') as (
+      payload: unknown,
+      acknowledge: (response: OperationResult<RoomResponse>) => void,
+    ) => void;
+
+    let response: OperationResult<RoomResponse> | null = null;
+    roomCreateHandler(
+      {
+        memberId: 'member-a',
+        memberName: 'Member A',
+        serviceId: 'youtube',
+        initialPlayback: {
+          serviceId: 'youtube',
+          mediaId: 'def456',
+          title: 'Another Clip',
+          playing: false,
+          positionSec: 0,
+        },
+      },
+      (value) => {
+        response = value;
+      },
+    );
+
+    expect(response).toEqual({
+      ok: false,
+      error: 'Leave your current room before joining or creating another room.',
+    });
+    expect(state.roomStore.size()).toBe(1);
+    expect(room.members.has('member-a')).toBe(true);
+    expect(socket.joinedRooms).toHaveLength(0);
+  });
+
   it('evicts the least recently used room when creating a room at capacity', () => {
     const io = new FakeIo();
     const socket = new FakeSocket('socket-3');
@@ -700,9 +759,9 @@ describe('socket handlers', () => {
     expect(state.activeSocketByMember.get(`${room.roomCode}:member-a`)).toBe(nextSocket.id);
   });
 
-  it('moves the prior room membership before joining a new room on the same socket', () => {
+  it('rejects room join while the same member is active in another room', () => {
     const io = new FakeIo();
-    const socket = new FakeSocket('socket-5');
+    const socket = new FakeSocket('socket-join-blocked');
     const state = createRealtimeState();
     const firstRoom = createRoomState('ROOM01', {
       memberId: 'member-a',
@@ -751,30 +810,31 @@ describe('socket handlers', () => {
     roomJoinHandler(
       {
         roomCode: secondRoom.roomCode,
-        memberId: 'member-b',
-        memberName: 'Member B',
+        memberId: 'member-a',
+        memberName: 'Member A',
       },
       (value) => {
         response = value;
       },
     );
 
-    expect(response).toMatchObject({ ok: true });
-    expect(socket.leftRooms).toEqual([firstRoom.roomCode]);
-    expect(socket.joinedRooms).toEqual([secondRoom.roomCode]);
-    expect(firstRoom.members.has('member-a')).toBe(false);
+    expect(response).toEqual({
+      ok: false,
+      error: 'Leave your current room before joining or creating another room.',
+    });
+    expect(socket.leftRooms).toHaveLength(0);
+    expect(socket.joinedRooms).toHaveLength(0);
+    expect(firstRoom.members.has('member-a')).toBe(true);
     expect(firstRoom.members.has('member-c')).toBe(true);
-    expect(state.activeSocketByMember.has(`${firstRoom.roomCode}:member-a`)).toBe(false);
+    expect(secondRoom.members.has('member-a')).toBe(false);
+    expect(secondRoom.members.has('member-b')).toBe(true);
+    expect(state.activeSocketByMember.get(`${firstRoom.roomCode}:member-a`)).toBe(socket.id);
     expect(state.sessionsBySocket.get(socket.id)).toMatchObject({
       socketId: socket.id,
-      roomCode: secondRoom.roomCode,
-      memberId: 'member-b',
+      roomCode: firstRoom.roomCode,
+      memberId: 'member-a',
     });
-    expect(io.emitted).toHaveLength(1);
-    expect(io.emitted[0]).toMatchObject({
-      room: firstRoom.roomCode,
-      event: 'room:state',
-    });
+    expect(io.emitted).toHaveLength(0);
   });
 
   it('refreshes room recency on playback updates', () => {

@@ -4,6 +4,7 @@
     createBackgroundState,
     selectConnectionStatus,
     selectRoom,
+    selectSession,
     type BackgroundState,
   } from '../../utils/background/state';
   import { sendMessage } from '../../utils/protocol/messaging';
@@ -26,6 +27,14 @@
 
   const connectionStatus = $derived(selectConnectionStatus(popup));
   const room = $derived(selectRoom(popup));
+  const session = $derived(selectSession(popup));
+  const isActiveRoomOnCurrentTab = $derived(
+    popup.controlledTab != null &&
+      activeTab.tabId != null &&
+      popup.controlledTab.tabId === activeTab.tabId,
+  );
+  const leaveFirstMessage =
+    'This tab is not controlling your active room. Leave it before starting or joining a room here.';
 
   function setLastError(error: unknown): void {
     popup = { ...popup, lastError: getErrorMessage(error, 'Unexpected popup error.') };
@@ -118,6 +127,31 @@
             {isBusy}
             onLeave={handleLeaveRoom}
           />
+          {#if !isActiveRoomOnCurrentTab}
+            <Notice kind="warning" message={leaveFirstMessage} />
+          {/if}
+        {:else if session}
+          <section class="flex flex-col gap-3">
+            <div class="card flex flex-col gap-3">
+              <div class="space-y-1">
+                <p class="m-0 label-tiny">Active room</p>
+                <p class="m-0 text-sm font-semibold text-stone-900">
+                  Reconnecting to room {session.roomCode}
+                </p>
+                <p class="m-0 text-sm leading-5 text-stone-500">
+                  {leaveFirstMessage}
+                </p>
+              </div>
+              <button
+                class="btn-danger"
+                type="button"
+                onclick={handleLeaveRoom}
+                disabled={isBusy}
+              >
+                Leave
+              </button>
+            </div>
+          </section>
         {:else}
           <Lobby
             activeTab={activeTab}
