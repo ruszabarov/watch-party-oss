@@ -9,3 +9,4 @@ services:
       PORT: '8787'
       ROOM_IDLE_TTL_MS: '21600000'
       MAX_ROOMS: '1000'
+      LOG_LEVEL: debug
