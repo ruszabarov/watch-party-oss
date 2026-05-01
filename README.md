@@ -30,16 +30,21 @@ pnpm check
 pnpm build
 pnpm build:firefox
 pnpm build:safari
+make safari
 ```
 
-Safari packaging still requires Apple's native conversion/wrapper flow after `pnpm build:safari`.
+Chrome and Firefox releases are submitted by `.github/workflows/release.yml` when an
+`extension-v*` tag is pushed, or when the workflow is run manually. The workflow
+packages the committed version from `apps/extension/package.json`; bump and
+commit that file before creating the release tag. Safari packaging is still
+manual; `make safari` creates the Safari zip, then Apple's native
+conversion/wrapper flow is still required.
 
 ## Extension Environment
 
-Copy [apps/extension/.env.example](/Users/ruszabarov/projects/watch-party-oss/apps/extension/.env.example) to `apps/extension/.env` and set:
+Copy [apps/extension/.env.example](apps/extension/.env.example) to `apps/extension/.env` and set:
 
-- `WATCH_PARTY_SERVER_URL`: default backend URL used by the extension
-- `WATCH_PARTY_SHOW_SERVER_SETTINGS=true`: show the popup server override input for local dev or self-hosted builds
+- `SERVER_URL`: default backend URL used by the extension
 
 ## Self-Hosting The Server
 
@@ -75,4 +80,4 @@ Health check:
 curl http://localhost:8787/health
 ```
 
-Point the extension at your deployed server by setting `WATCH_PARTY_SERVER_URL` in `apps/extension/.env`.
+Point the extension at your deployed server by setting `SERVER_URL` in `apps/extension/.env`.
