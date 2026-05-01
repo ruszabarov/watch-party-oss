@@ -1,14 +1,16 @@
-import type { PlaybackUpdateDraft } from '@open-watch-party/shared';
+import type { PlaybackUpdateDraft, ServiceId } from '@open-watch-party/shared';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 
 import type { ServiceContentContext } from '../protocol/extension';
 import { onMessage, sendMessage } from '../protocol/messaging';
-import type { ServicePlugin } from './types';
+import { SERVICE_PLUGIN_BY_ID } from './registry';
 
 const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'ended'] as const;
 const SEEK_THRESHOLD_SEC = 1.5;
 
-export function runServiceContentScript(plugin: ServicePlugin) {
+export function runServiceContentScript(serviceId: ServiceId) {
+  const plugin = SERVICE_PLUGIN_BY_ID[serviceId];
+
   return defineContentScript({
     matches: [...plugin.contentMatches],
     main() {
@@ -18,13 +20,12 @@ export function runServiceContentScript(plugin: ServicePlugin) {
       let refreshFrame: number | null = null;
       let stopped = false;
 
-
       const readContext = (): ServiceContentContext | null => {
-        const mediaId = plugin.parseUrl(window.location.href)?.mediaId;
-        if (!activeVideo || !mediaId) return null;
+        const mediaId = plugin.extractMediaId(new URL(window.location.href));
+        if (!activeVideo || mediaId === null) return null;
 
         return {
-          serviceId: plugin.id,
+          serviceId,
           href: window.location.href,
           title: document.title,
           mediaTitle: plugin.getMediaTitle(),
@@ -33,11 +34,11 @@ export function runServiceContentScript(plugin: ServicePlugin) {
       };
 
       const readPlayback = (): PlaybackUpdateDraft | null => {
-        const mediaId = plugin.parseUrl(window.location.href)?.mediaId;
-        if (!activeVideo || !mediaId) return null;
+        const mediaId = plugin.extractMediaId(new URL(window.location.href));
+        if (!activeVideo || mediaId === null) return null;
 
         return {
-          serviceId: plugin.id,
+          serviceId,
           mediaId,
           title: plugin.getMediaTitle(),
           positionSec: Number(activeVideo.currentTime.toFixed(3)),

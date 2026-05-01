@@ -59,7 +59,7 @@
 
 <section class="flex flex-col gap-3">
   <div class="flex items-start gap-3">
-    <ServiceBadge serviceId={activeDescriptor?.id ?? null} />
+    <ServiceBadge serviceId={activeTab.activeServiceId} />
     <div class="min-w-0 space-y-1">
       <p class="m-0 text-sm font-semibold leading-5">
         {title}

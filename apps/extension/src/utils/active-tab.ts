@@ -40,7 +40,7 @@ function summarizeActiveTab(tab: BrowserTab): ActiveTabSummary {
   return {
     tabId: tab.id,
     title: tab.title ?? '',
-    activeServiceId: classification?.plugin.id ?? null,
+    activeServiceId: classification?.serviceId ?? null,
     isWatchPage: classification?.isWatchPage ?? false,
   };
 }

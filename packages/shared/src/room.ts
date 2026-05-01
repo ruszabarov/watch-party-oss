@@ -11,7 +11,7 @@ import {
   sanitizeOptionalTitle,
   MAX_PLAYBACK_POSITION_SEC as maxPlaybackPositionSec,
 } from './protocol';
-import { buildCanonicalWatchUrl } from './services';
+import { SERVICE_DEFINITION_BY_ID } from './services';
 
 export interface RoomState {
   roomCode: string;
@@ -49,7 +49,7 @@ export function createRoomState(
     throw new Error('Initial playback service must match the room service.');
   }
 
-  assertCanonicalWatchUrl(request.serviceId, request.initialPlayback.mediaId);
+  assertValidMediaId(request.serviceId, request.initialPlayback.mediaId);
 
   const sequence = 1;
   const playback: PlaybackState = {
@@ -103,7 +103,7 @@ export function applyPlaybackUpdate(
   memberId: string,
   now = Date.now(),
 ): PlaybackState {
-  assertCanonicalWatchUrl(update.serviceId, update.mediaId);
+  assertValidMediaId(update.serviceId, update.mediaId);
 
   const lastClientSequence = room.lastPlaybackClientSequenceByMember.get(memberId);
   if (lastClientSequence !== undefined && update.clientSequence <= lastClientSequence) {
@@ -143,10 +143,9 @@ export function resolvePlaybackState(playback: PlaybackState, now = Date.now()):
 }
 
 export function toPartySnapshot(room: RoomState, now = Date.now()): PartySnapshot {
-  const watchUrl = buildCanonicalWatchUrl(room.serviceId, room.playback.mediaId);
-  if (!watchUrl) {
-    throw new Error('Could not derive a canonical watch URL for this service.');
-  }
+  const watchUrl = SERVICE_DEFINITION_BY_ID[room.serviceId].buildCanonicalWatchUrl(
+    room.playback.mediaId,
+  );
 
   return {
     roomCode: room.roomCode,
@@ -169,8 +168,8 @@ function normalizePosition(value: number): number {
   return Math.min(maxPlaybackPositionSec, Math.max(0, Number(value.toFixed(3))));
 }
 
-function assertCanonicalWatchUrl(serviceId: ServiceId, mediaId: string): void {
-  if (!buildCanonicalWatchUrl(serviceId, mediaId)) {
-    throw new Error('Could not derive a canonical watch URL for this service.');
+function assertValidMediaId(serviceId: ServiceId, mediaId: string): void {
+  if (!SERVICE_DEFINITION_BY_ID[serviceId].isMediaIdValid(mediaId)) {
+    throw new Error('Invalid media id for service.');
   }
 }

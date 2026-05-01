@@ -19,6 +19,10 @@ interface ControllableWatchTab {
   playback: PlaybackUpdateDraft;
 }
 
+function isPluginUrl(plugin: { matchesUrl(url: URL): boolean }, rawUrl: string): boolean {
+  return URL.canParse(rawUrl) && plugin.matchesUrl(new URL(rawUrl));
+}
+
 export class ControlledTabService {
   constructor(
     private readonly state: BackgroundState,
@@ -35,7 +39,7 @@ export class ControlledTabService {
       if (tabId === controlledTab?.tabId && tab.url) {
         const session = selectSession(this.state);
         const sessionPlugin = session ? getPlugin(session.serviceId) : null;
-        if (sessionPlugin && !sessionPlugin.parseUrl(tab.url)) {
+        if (sessionPlugin && !isPluginUrl(sessionPlugin, tab.url)) {
           this.state.lastWarning = `The controlled tab left ${sessionPlugin.descriptor.label}.`;
           syncBackgroundState(this.state);
         }
@@ -164,8 +168,7 @@ export class ControlledTabService {
       throw new Error('This tab is not on a supported streaming service.');
     }
 
-    const parsedContextUrl = plugin.parseUrl(context.href);
-    if (!parsedContextUrl?.mediaId) {
+    if (plugin.extractMediaId(new URL(context.href)) === null) {
       throw new Error(`${plugin.descriptor.label} tab is not on a supported watch page.`);
     }
 

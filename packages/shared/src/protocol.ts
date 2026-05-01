@@ -1,13 +1,13 @@
 import { z } from 'zod';
+import { isServiceId, type ServiceId } from './services';
+export type { ServiceId } from './services';
 
-export const SUPPORTED_SERVICES = ['netflix', 'youtube'] as const;
 export const MAX_MEMBER_NAME_LENGTH = 64;
 export const MAX_TITLE_LENGTH = 256;
 export const MAX_PLAYBACK_POSITION_SEC = 48 * 60 * 60;
 
 const CONTROL_CHARACTERS_PATTERN = /\p{Cc}+/gu;
 
-export type ServiceId = (typeof SUPPORTED_SERVICES)[number];
 export type ConnectionStatus =
   | 'disconnected'
   | 'connecting'
@@ -63,7 +63,6 @@ export function sanitizeOptionalTitle(value: string | undefined): string {
   return sanitizeText(value, MAX_TITLE_LENGTH) || '';
 }
 
-const serviceIdSchema = z.enum(SUPPORTED_SERVICES);
 const roomCodeSchema = z
   .string()
   .trim()
@@ -71,6 +70,10 @@ const roomCodeSchema = z
   .pipe(z.string().min(1));
 const memberIdSchema = z.string().trim().min(1);
 const mediaIdSchema = z.string().trim().min(1);
+const serviceIdSchema = z.custom<ServiceId>(
+  (value) => typeof value === 'string' && isServiceId(value),
+  { message: 'Unsupported service id' },
+);
 const positionSchema = z.number().min(0).max(MAX_PLAYBACK_POSITION_SEC);
 const memberNameSchema = z.string().transform(sanitizeMemberName);
 const titleSchema = z

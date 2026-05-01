@@ -507,7 +507,8 @@ function bindSocketSession(
   const key = memberKey(roomCode, memberId);
   const priorSocketId = state.activeSocketByMember.get(key);
   const allowPlaybackUpdate =
-    state.sessionsBySocket.get(socketId)?.allowPlaybackUpdate ?? createPlaybackUpdateTokenConsumer();
+    state.sessionsBySocket.get(socketId)?.allowPlaybackUpdate ??
+    createPlaybackUpdateTokenConsumer();
 
   if (priorSocketId && priorSocketId !== socketId) {
     log.info(

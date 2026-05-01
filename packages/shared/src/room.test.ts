@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildCanonicalWatchUrl,
   applyPlaybackUpdate,
   createRoomRequestSchema,
   createRoomState,
+  findServiceDefinitionByUrl,
   joinRoomRequestSchema,
   leaveRoomRequestSchema,
   MAX_MEMBER_NAME_LENGTH,
@@ -15,6 +15,9 @@ import {
   normalizeRoomCode,
   resolvePlaybackState,
   sanitizeMemberName,
+  SERVICE_DEFINITION_BY_ID,
+  SUPPORTED_SERVICES,
+  SUPPORTED_SERVICE_CONTENT_MATCHES,
   toPartySnapshot,
   upsertRoomMember,
 } from './index';
@@ -197,17 +200,76 @@ describe('room reducer', () => {
   });
 
   it('builds canonical watch urls per service', () => {
-    expect(buildCanonicalWatchUrl('netflix', '123456')).toBe(
+    expect(SERVICE_DEFINITION_BY_ID.netflix.buildCanonicalWatchUrl('123456')).toBe(
       'https://www.netflix.com/watch/123456',
     );
-    expect(buildCanonicalWatchUrl('youtube', 'abc123_-')).toBe(
+    expect(SERVICE_DEFINITION_BY_ID.youtube.buildCanonicalWatchUrl('abc123_-')).toBe(
       'https://www.youtube.com/watch?v=abc123_-',
     );
   });
 
+  it('classifies supported service watch urls', () => {
+    expect(findServiceDefinitionByUrl(new URL('https://www.netflix.com/watch/123456'))).toEqual({
+      serviceId: 'netflix',
+      service: expect.any(Object),
+      isWatchPage: true,
+    });
+    expect(findServiceDefinitionByUrl(new URL('https://www.youtube.com/watch?v=abc123'))).toEqual({
+      serviceId: 'youtube',
+      service: expect.any(Object),
+      isWatchPage: true,
+    });
+    expect(findServiceDefinitionByUrl(new URL('https://youtu.be/abc123'))).toEqual({
+      serviceId: 'youtube',
+      service: expect.any(Object),
+      isWatchPage: true,
+    });
+    expect(findServiceDefinitionByUrl(new URL('https://www.youtube.com/embed/abc123'))).toEqual({
+      serviceId: 'youtube',
+      service: expect.any(Object),
+      isWatchPage: true,
+    });
+    expect(findServiceDefinitionByUrl(new URL('https://www.youtube.com/live/abc123'))).toEqual({
+      serviceId: 'youtube',
+      service: expect.any(Object),
+      isWatchPage: true,
+    });
+  });
+
+  it('classifies supported service non-watch urls and unsupported urls', () => {
+    expect(findServiceDefinitionByUrl(new URL('https://www.netflix.com/browse'))).toEqual({
+      serviceId: 'netflix',
+      service: expect.any(Object),
+      isWatchPage: false,
+    });
+    expect(
+      findServiceDefinitionByUrl(new URL('https://www.youtube.com/feed/subscriptions')),
+    ).toEqual({
+      serviceId: 'youtube',
+      service: expect.any(Object),
+      isWatchPage: false,
+    });
+    expect(findServiceDefinitionByUrl(new URL('https://www.youtube.com/watch?v='))).toEqual({
+      serviceId: 'youtube',
+      service: expect.any(Object),
+      isWatchPage: false,
+    });
+    expect(findServiceDefinitionByUrl(new URL('https://example.com/watch/123'))).toBeUndefined();
+  });
+
+  it('exposes supported service ids and content matches from one catalog', () => {
+    expect(SUPPORTED_SERVICES).toEqual(['netflix', 'youtube']);
+    expect(SUPPORTED_SERVICE_CONTENT_MATCHES).toEqual([
+      '*://*.netflix.com/*',
+      '*://*.youtube.com/*',
+      '*://youtu.be/*',
+      '*://*.youtube-nocookie.com/*',
+    ]);
+  });
+
   it('rejects invalid media ids when deriving canonical watch urls', () => {
-    expect(buildCanonicalWatchUrl('netflix', 'abc123')).toBeNull();
-    expect(buildCanonicalWatchUrl('youtube', 'abc/123')).toBeNull();
+    expect(SERVICE_DEFINITION_BY_ID.netflix.isMediaIdValid('abc123')).toBe(false);
+    expect(SERVICE_DEFINITION_BY_ID.youtube.isMediaIdValid('abc/123')).toBe(false);
     expect(() =>
       createRoomState('ROOM04', {
         memberId: 'member-a',
@@ -221,7 +283,7 @@ describe('room reducer', () => {
           playing: true,
         },
       }),
-    ).toThrow('Could not derive a canonical watch URL for this service.');
+    ).toThrow('Invalid media id for service.');
   });
 
   it('updates the canonical watch url when playback media changes', () => {

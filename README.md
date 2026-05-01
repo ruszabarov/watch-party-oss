@@ -13,11 +13,12 @@ Open-source watch party stack built as a pnpm workspace:
 | Netflix | `netflix.com/watch/...`                                                                    |
 | YouTube | `youtube.com/watch?v=...`, `youtu.be/...`, `youtube.com/embed/...`, `youtube.com/live/...` |
 
-Adding a service is a self-contained change: drop a `ServicePlugin` under
+Adding a service starts in `packages/shared/src/services.ts`, which owns the
+service ID, display metadata, URL parsing, canonical watch URL builder, and
+extension match patterns. Then add the extension-only DOM integration under
 `apps/extension/src/utils/services/<id>.ts`, add a one-line
-`runServiceContentScript(MY_SERVICE)` entrypoint, register the plugin in
-`SERVICE_PLUGINS`, and append its origin to `host_permissions` in
-`apps/extension/wxt.config.ts`.
+`runServiceContentScript(MY_SERVICE)` entrypoint, and register the plugin in
+`SERVICE_PLUGINS`.
 
 ## Commands
 
