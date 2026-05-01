@@ -4,7 +4,7 @@ import { SUPPORTED_SERVICE_CONTENT_MATCHES } from '@open-watch-party/shared';
 
 const LOCAL_SERVER_URL = 'http://localhost:8787';
 
-const defaultServerUrl = process.env['WATCH_PARTY_SERVER_URL'] ?? LOCAL_SERVER_URL;
+const defaultServerUrl = process.env['SERVER_URL'] ?? LOCAL_SERVER_URL;
 
 const connectSrc = [
   "'self'",

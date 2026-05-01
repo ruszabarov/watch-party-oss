@@ -5,13 +5,13 @@ import type {
   PlaybackState,
   PlaybackUpdate,
   ServiceId,
-} from "./protocol";
+} from './protocol';
 import {
   sanitizeMemberName,
   sanitizeOptionalTitle,
   MAX_PLAYBACK_POSITION_SEC as maxPlaybackPositionSec,
-} from "./protocol";
-import { SERVICE_DEFINITION_BY_ID } from "./services";
+} from './protocol';
+import { SERVICE_DEFINITION_BY_ID } from './services';
 
 export interface RoomState {
   readonly roomCode: string;
@@ -23,7 +23,7 @@ export interface RoomState {
   createdAt: number;
 }
 
-const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_CODE_LENGTH = 6;
 
 export function normalizeRoomCode(roomCode: string): string {
@@ -37,7 +37,7 @@ export function createRoomCode(): string {
   return Array.from(values, (value) => {
     const index = value % ROOM_CODE_ALPHABET.length;
     return ROOM_CODE_ALPHABET[index] ?? ROOM_CODE_ALPHABET[0];
-  }).join("");
+  }).join('');
 }
 
 export function createRoomState(
@@ -102,12 +102,8 @@ export function applyPlaybackUpdate(
 ): PlaybackState {
   assertValidMediaId(update.serviceId, update.mediaId);
 
-  const lastClientSequence =
-    room.lastPlaybackClientSequenceByMember.get(memberId);
-  if (
-    lastClientSequence !== undefined &&
-    update.clientSequence <= lastClientSequence
-  ) {
+  const lastClientSequence = room.lastPlaybackClientSequenceByMember.get(memberId);
+  if (lastClientSequence !== undefined && update.clientSequence <= lastClientSequence) {
     return room.playback;
   }
 
@@ -131,10 +127,7 @@ export function applyPlaybackUpdate(
   return playback;
 }
 
-export function resolvePlaybackState(
-  playback: PlaybackState,
-  now = Date.now(),
-): PlaybackState {
+export function resolvePlaybackState(playback: PlaybackState, now = Date.now()): PlaybackState {
   if (!playback.playing) {
     return playback;
   }
@@ -146,13 +139,10 @@ export function resolvePlaybackState(
   };
 }
 
-export function toPartySnapshot(
-  room: RoomState,
-  now = Date.now(),
-): PartySnapshot {
-  const watchUrl = SERVICE_DEFINITION_BY_ID[
-    room.serviceId
-  ].buildCanonicalWatchUrl(room.playback.mediaId);
+export function toPartySnapshot(room: RoomState, now = Date.now()): PartySnapshot {
+  const watchUrl = SERVICE_DEFINITION_BY_ID[room.serviceId].buildCanonicalWatchUrl(
+    room.playback.mediaId,
+  );
 
   return {
     roomCode: room.roomCode,
@@ -172,14 +162,11 @@ function normalizePosition(value: number): number {
     return 0;
   }
 
-  return Math.min(
-    maxPlaybackPositionSec,
-    Math.max(0, Number(value.toFixed(3))),
-  );
+  return Math.min(maxPlaybackPositionSec, Math.max(0, Number(value.toFixed(3))));
 }
 
 function assertValidMediaId(serviceId: ServiceId, mediaId: string): void {
   if (!SERVICE_DEFINITION_BY_ID[serviceId].isMediaIdValid(mediaId)) {
-    throw new Error("Invalid media id for service.");
+    throw new Error('Invalid media id for service.');
   }
 }
