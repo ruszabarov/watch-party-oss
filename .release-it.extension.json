@@ -1,0 +1,35 @@
+{
+  "$schema": "https://unpkg.com/release-it@20/schema/release-it.json",
+  "git": {
+    "requireBranch": "main",
+    "commitMessage": "Release extension v${version}",
+    "tagName": "extension-v${version}",
+    "tagMatch": "extension-v*",
+    "tagAnnotation": "Release extension v${version}"
+  },
+  "npm": false,
+  "github": {
+    "release": false
+  },
+  "hooks": {
+    "before:init": [
+      "pnpm lint",
+      "pnpm format:check",
+      "pnpm --filter @open-watch-party/shared test",
+      "pnpm --filter @open-watch-party/extension check",
+      "pnpm --filter @open-watch-party/extension build"
+    ]
+  },
+  "plugins": {
+    "@release-it/bumper": {
+      "in": {
+        "file": "apps/extension/package.json",
+        "path": "version"
+      },
+      "out": {
+        "file": "apps/extension/package.json",
+        "path": "version"
+      }
+    }
+  }
+}

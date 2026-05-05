@@ -1,0 +1,51 @@
+name: Server Release
+
+on:
+  push:
+    tags:
+      - 'server-v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate release version
+        run: node scripts/validate-release-tag.mjs server apps/server/package.json server-v
+
+      - name: Check server
+        run: |
+          pnpm lint
+          pnpm format:check
+          pnpm --filter @open-watch-party/shared test
+          pnpm --filter @open-watch-party/server test
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push Docker image
+        run: |
+          VERSION="${GITHUB_REF_NAME#server-v}"
+          IMAGE="ghcr.io/$(echo "${GITHUB_REPOSITORY}-server" | tr '[:upper:]' '[:lower:]')"
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:latest" \
+            .
+          docker push "${IMAGE}:${VERSION}"
+          docker push "${IMAGE}:latest"

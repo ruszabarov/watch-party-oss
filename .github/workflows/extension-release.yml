@@ -10,11 +10,11 @@ jobs:
   submit:
     runs-on: ubuntu-24.04-arm
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -24,12 +24,31 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node scripts/validate-release-tag.mjs extension apps/extension/package.json extension-v
+
+      - name: Check extension
+        run: |
+          pnpm lint
+          pnpm format:check
+          pnpm --filter @open-watch-party/shared test
+          pnpm --filter @open-watch-party/extension check
+
       - name: Zip extensions
         run: |
           pnpm --filter @open-watch-party/extension exec wxt zip -b chrome
           pnpm --filter @open-watch-party/extension exec wxt zip -b firefox --sources
+          pnpm --filter @open-watch-party/extension exec wxt zip -b safari
         env:
           SERVER_URL: ${{ secrets.SERVER_URL }}
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Extension ${{ github.ref_name }}
+          files: apps/extension/.output/*.zip
 
       - name: Submit to stores
         working-directory: apps/extension

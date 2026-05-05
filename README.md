@@ -33,12 +33,44 @@ pnpm build:safari
 make safari
 ```
 
-Chrome and Firefox releases are submitted by `.github/workflows/release.yml` when an
-`extension-v*` tag is pushed, or when the workflow is run manually. The workflow
-packages the committed version from `apps/extension/package.json`; bump and
-commit that file before creating the release tag. Safari packaging is still
-manual; `make safari` creates the Safari zip, then Apple's native
-conversion/wrapper flow is still required.
+## Releases
+
+Extension and server versions are released independently with release-it:
+
+```bash
+pnpm release:extension patch
+pnpm release:server patch
+```
+
+Replace `patch` with `minor`, `major`, or an explicit semver version when needed.
+Dry-run commands are also available:
+
+```bash
+pnpm release:extension:dry-run patch
+pnpm release:server:dry-run patch
+```
+
+The extension release command bumps `apps/extension/package.json`, commits the
+change, creates an `extension-v*` tag, and pushes it. The extension release
+workflow packages Chrome, Firefox, Firefox sources, and Safari zips, uploads all
+zips to the GitHub Release page, and submits Chrome and Firefox through WXT.
+Safari publishing remains manual; download the Safari zip from the GitHub
+Release and use Apple's conversion/wrapper flow.
+
+The server release command bumps `apps/server/package.json`, commits the change,
+creates a `server-v*` tag, and pushes it. The server release workflow builds the
+Docker image and publishes it to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/<owner>/<repo>-server:latest
+docker pull ghcr.io/<owner>/<repo>-server:<version>
+```
+
+For this repository, the image name is:
+
+```bash
+ghcr.io/ruszabarov/open-watch-party-server
+```
 
 ## Extension Environment
 
