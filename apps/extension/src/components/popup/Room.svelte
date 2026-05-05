@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Check, Copy } from '@lucide/svelte';
   import { selectRoom, selectSession, type BackgroundState } from '../../utils/background/state';
 
   interface Props {
@@ -43,14 +44,9 @@
         onclick={copyCode}
       >
         {#if copied}
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+          <Check size={14} strokeWidth={1.75} aria-hidden="true" />
         {:else}
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.4" />
-            <path d="M11 5V4a1.5 1.5 0 00-1.5-1.5h-5A1.5 1.5 0 003 4v5A1.5 1.5 0 004.5 10.5H5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
+          <Copy size={14} strokeWidth={1.75} aria-hidden="true" />
         {/if}
       </button>
       <button

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { CircleAlert, TriangleAlert, X } from '@lucide/svelte';
+
   interface Props {
     kind: 'error' | 'warning';
     message: string;
@@ -19,20 +21,9 @@
 >
   <span class="inline-flex shrink-0 pt-0.5" aria-hidden="true">
     {#if kind === 'error'}
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.4" />
-        <path d="M7 4.5v3m0 2v.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-      </svg>
+      <CircleAlert size={14} strokeWidth={1.75} />
     {:else}
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path
-          d="M7 2l5.2 9H1.8L7 2z"
-          stroke="currentColor"
-          stroke-width="1.4"
-          stroke-linejoin="round"
-        />
-        <path d="M7 6v2m0 2v.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-      </svg>
+      <TriangleAlert size={14} strokeWidth={1.75} />
     {/if}
   </span>
 
@@ -45,9 +36,7 @@
       aria-label="Dismiss"
       onclick={onDismiss}
     >
-      <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-        <path d="M3.5 3.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-      </svg>
+      <X size={12} strokeWidth={1.75} aria-hidden="true" />
     </button>
   {/if}
 </div>
