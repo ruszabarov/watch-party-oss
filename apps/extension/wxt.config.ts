@@ -5,9 +5,7 @@ import path from 'path';
 
 const LOCAL_SERVER_URL = 'http://localhost:8787';
 
-const defaultServerUrl = (process.env['SERVER_URL'] ?? LOCAL_SERVER_URL)
-  .trim()
-  .replace(/\/+$/, '');
+const defaultServerUrl = (process.env['SERVER_URL'] ?? LOCAL_SERVER_URL).trim().replace(/\/+$/, '');
 
 const connectSrc = [
   "'self'",
