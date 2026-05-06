@@ -1,20 +1,16 @@
 import { storage } from '#imports';
+import { createStore } from '@xstate/store';
 import type { ConnectionStatus, PartySnapshot } from '@open-watch-party/shared';
 import { sanitizeMemberName, type ServiceId } from '@open-watch-party/shared';
 import { match, P } from 'ts-pattern';
 
-import type { ServiceContentContext } from '../protocol/extension';
+import type { WatchPageContext } from '../protocol/extension';
 
 export type SessionInfo = {
   roomCode: string;
   memberId: string;
   serviceId: ServiceId;
   playbackClientSequence: number;
-};
-
-export type StoredSettings = {
-  memberName: string;
-  session: SessionInfo | null;
 };
 
 export type BackgroundSessionState =
@@ -41,7 +37,7 @@ export type BackgroundState = {
   sessionState: BackgroundSessionState;
   controlledTab: {
     tabId: number;
-    context: ServiceContentContext;
+    context: WatchPageContext;
   } | null;
   lastError: string | null;
   lastWarning: string | null;
@@ -63,23 +59,7 @@ export const backgroundStateItem = storage.defineItem<BackgroundState>('session:
   fallback: createBackgroundState(),
 });
 
-export function syncBackgroundState(state: BackgroundState): void {
-  void backgroundStateItem.setValue(state);
-}
-
-export function clearControlledTab(state: BackgroundState): void {
-  state.controlledTab = null;
-}
-
-export function setControlledTab(
-  state: BackgroundState,
-  tabId: number,
-  context: ServiceContentContext,
-): void {
-  state.controlledTab = { tabId, context };
-}
-
-export function createIdleSessionState(): BackgroundSessionState {
+function createIdleSessionState(): BackgroundSessionState {
   return { kind: 'idle', connectionStatus: 'disconnected' };
 }
 
@@ -97,22 +77,21 @@ export function selectRoom(state: BackgroundState): PartySnapshot | null {
     .exhaustive();
 }
 
-export function selectConnectionStatus(state: BackgroundState): ConnectionStatus {
+function selectConnectionStatus(state: BackgroundState): ConnectionStatus {
   return state.sessionState.connectionStatus;
 }
 
-export function setStoredSession(state: BackgroundState, session: SessionInfo | null): void {
-  state.sessionState = session
+function createStoredSessionState(session: SessionInfo | null): BackgroundSessionState {
+  return session
     ? { kind: 'stored-session', session, connectionStatus: 'disconnected' }
     : createIdleSessionState();
 }
 
-export function setJoinedSession(
-  state: BackgroundState,
+function createJoinedSessionState(
   session: SessionInfo,
   room: PartySnapshot,
-): void {
-  state.sessionState = {
+): BackgroundSessionState {
+  return {
     kind: 'joined',
     session,
     room,
@@ -120,28 +99,20 @@ export function setJoinedSession(
   };
 }
 
-export function setSessionError(
+function createSessionErrorState(
   state: BackgroundState,
-  message: string,
   options: { clearSession?: boolean } = {},
-): void {
-  state.sessionState = options.clearSession
+): BackgroundSessionState {
+  return options.clearSession
     ? { kind: 'idle', connectionStatus: 'error' }
     : { ...state.sessionState, connectionStatus: 'error' };
-  state.lastError = message;
 }
 
-export function clearSession(state: BackgroundState): void {
-  state.sessionState = createIdleSessionState();
-  state.lastError = null;
-  state.lastWarning = null;
-}
-
-export function updateSessionConnectionStatus(
+function updateSessionConnectionStatus(
   state: BackgroundState,
   status: ConnectionStatus,
-): void {
-  state.sessionState = match(state.sessionState)
+): BackgroundSessionState {
+  return match(state.sessionState)
     .returnType<BackgroundSessionState>()
     .with({ kind: 'idle' }, () => ({
       kind: 'idle',
@@ -155,10 +126,10 @@ export function updateSessionConnectionStatus(
     .exhaustive();
 }
 
-export function updateSessionRoom(state: BackgroundState, room: PartySnapshot): void {
-  const nextSessionState = match(state.sessionState)
+function updateSessionRoom(state: BackgroundState, room: PartySnapshot): BackgroundState {
+  const sessionState = match(state.sessionState)
     .returnType<BackgroundSessionState>()
-    .with({ kind: 'idle' }, (sessionState) => sessionState)
+    .with({ kind: 'idle' }, (idleSessionState) => idleSessionState)
     .with({ kind: P.union('stored-session', 'joined') }, ({ session, connectionStatus }) => ({
       kind: 'joined',
       session: {
@@ -171,20 +142,23 @@ export function updateSessionRoom(state: BackgroundState, room: PartySnapshot): 
     }))
     .exhaustive();
 
-  state.sessionState = nextSessionState;
-  if (nextSessionState.kind === 'joined') {
-    state.lastWarning = null;
-  }
+  return {
+    ...state,
+    sessionState,
+    lastWarning: sessionState.kind === 'joined' ? null : state.lastWarning,
+  };
 }
 
-export function updatePersistedSession(state: BackgroundState, session: SessionInfo | null): void {
+function updateSessionFromPersistedSession(
+  state: BackgroundState,
+  session: SessionInfo | null,
+): BackgroundSessionState {
   if (!session) {
-    clearSession(state);
-    return;
+    return createIdleSessionState();
   }
 
   const room = selectRoom(state);
-  state.sessionState = room
+  return room
     ? {
         kind: 'joined',
         session,
@@ -198,10 +172,91 @@ export function updatePersistedSession(state: BackgroundState, session: SessionI
       };
 }
 
+export function createSyncedBackgroundStore() {
+  const store = createStore({
+    context: createBackgroundState(),
+    on: {
+      hydrateSettings: (
+        state,
+        event: { settings: BackgroundState['settings']; session: SessionInfo | null },
+      ) => ({
+        ...state,
+        settings: event.settings,
+        sessionState: createStoredSessionState(event.session),
+      }),
+      updateSettings: (state, event: { settings: BackgroundState['settings'] }) => ({
+        ...state,
+        settings: event.settings,
+      }),
+      setControlledTab: (state, event: { tabId: number; context: WatchPageContext }) => ({
+        ...state,
+        controlledTab: {
+          tabId: event.tabId,
+          context: event.context,
+        },
+      }),
+      clearControlledTab: (state) => ({
+        ...state,
+        controlledTab: null,
+      }),
+      setJoinedSession: (state, event: { session: SessionInfo; room: PartySnapshot }) => ({
+        ...state,
+        sessionState: createJoinedSessionState(event.session, event.room),
+        lastError: null,
+      }),
+      setSessionError: (state, event: { message: string; clearSession?: boolean }) => ({
+        ...state,
+        sessionState: createSessionErrorState(state, { clearSession: event.clearSession }),
+        lastError: event.message,
+      }),
+      leaveRoom: (state) => ({
+        ...state,
+        sessionState: createIdleSessionState(),
+        controlledTab: null,
+        lastError: null,
+        lastWarning: null,
+      }),
+      updateSessionConnectionStatus: (
+        state,
+        event: { status: ConnectionStatus; errorMessage?: string | null },
+      ) => ({
+        ...state,
+        sessionState: updateSessionConnectionStatus(state, event.status),
+        lastError: event.errorMessage ?? (event.status === 'connected' ? null : state.lastError),
+      }),
+      updateSessionRoom: (state, event: { room: PartySnapshot }) =>
+        updateSessionRoom(state, event.room),
+      updatePersistedSession: (state, event: { session: SessionInfo | null }) => ({
+        ...state,
+        sessionState: updateSessionFromPersistedSession(state, event.session),
+        lastError: event.session ? state.lastError : null,
+        lastWarning: event.session ? state.lastWarning : null,
+      }),
+      setLastError: (state, event: { message: string | null }) => ({
+        ...state,
+        lastError: event.message,
+      }),
+      setLastWarning: (state, event: { message: string | null }) => ({
+        ...state,
+        lastWarning: event.message,
+      }),
+    },
+  });
+
+  void backgroundStateItem.setValue(store.getSnapshot().context);
+  store.subscribe((snapshot) => {
+    void backgroundStateItem.setValue(snapshot.context);
+  });
+
+  return store;
+}
+
+export type BackgroundStore = ReturnType<typeof createSyncedBackgroundStore>;
+
 export function normalizeMemberName(value: string): string {
   return sanitizeMemberName(value);
 }
 
-export function createGuestName(): string {
+function createGuestName(): string {
   return `Guest ${Math.floor(Math.random() * 900 + 100)}`;
 }

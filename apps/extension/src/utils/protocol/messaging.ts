@@ -9,13 +9,13 @@ import {
 
 import type { PartySnapshot, PlaybackUpdateDraft } from '@open-watch-party/shared';
 
-import type { ApplySnapshotResult, ServiceContentContext } from './extension';
+import type { ApplySnapshotResult, WatchPageContext } from './extension';
 
 export interface ExtensionProtocolMap {
-  'content:context': (payload: ServiceContentContext | null) => void;
+  'content:context': (payload: WatchPageContext | null) => void;
   'content:playback-update': (payload: PlaybackUpdateDraft) => void;
   'content:request-sync': () => void;
-  'party:request-context': () => ServiceContentContext | null;
+  'party:request-context': () => WatchPageContext | null;
   'party:request-playback': () => PlaybackUpdateDraft | null;
   'party:apply-snapshot': (payload: { snapshot: PartySnapshot }) => ApplySnapshotResult;
   'popup:create-room': (payload: { tabId: number }) => void;

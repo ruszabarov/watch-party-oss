@@ -5,22 +5,18 @@ import { onMessage } from '../utils/protocol/messaging';
 import { createBackgroundBus } from '../utils/background/bus';
 import { PartySessionService } from '../utils/background/party-session-service';
 import { SettingsStore } from '../utils/background/settings-store';
-import {
-  createBackgroundState,
-  syncBackgroundState,
-  type BackgroundState,
-} from '../utils/background/state';
+import { createSyncedBackgroundStore, type BackgroundStore } from '../utils/background/state';
 import { ControlledTabService } from '../utils/background/controlled-tab-service';
 
 export default defineBackground(() => {
-  const state = createBackgroundState();
+  const store = createSyncedBackgroundStore();
   const bus = createBackgroundBus();
-  const settingsStore = new SettingsStore(state);
-  const controlledTabService = new ControlledTabService(state, bus);
-  const partySessionService = new PartySessionService(state, bus, settingsStore);
+  const settingsStore = new SettingsStore(store);
+  const controlledTabService = new ControlledTabService(store, bus);
+  const partySessionService = new PartySessionService(store, bus, settingsStore);
 
   registerContentHandlers(controlledTabService);
-  registerPopupHandlers(state, settingsStore, controlledTabService, partySessionService);
+  registerPopupHandlers(store, settingsStore, controlledTabService, partySessionService);
   controlledTabService.registerEventHandlers();
   partySessionService.registerEventHandlers();
 
@@ -30,40 +26,36 @@ export default defineBackground(() => {
   })();
 });
 
-async function runMutation(state: BackgroundState, handler: () => Promise<void>): Promise<void> {
+async function runPopupAction(store: BackgroundStore, action: () => Promise<void>): Promise<void> {
   try {
-    await handler();
+    await action();
   } catch (error) {
-    state.lastError = getErrorMessage(error);
-    syncBackgroundState(state);
+    store.trigger.setLastError({ message: getErrorMessage(error) });
   }
 }
 
 function registerPopupHandlers(
-  state: BackgroundState,
+  store: BackgroundStore,
   settingsStore: SettingsStore,
   controlledTabService: ControlledTabService,
   partySessionService: PartySessionService,
 ): void {
   onMessage('popup:create-room', ({ data }) =>
-    runMutation(state, () =>
+    runPopupAction(store, () =>
       createRoomFromTab(data.tabId, controlledTabService, partySessionService),
     ),
   );
 
   onMessage('popup:join-room', ({ data }) =>
-    runMutation(state, () =>
+    runPopupAction(store, () =>
       joinRoomFromTab(data.roomCode, data.tabId, controlledTabService, partySessionService),
     ),
   );
 
-  onMessage('popup:leave-room', () => runMutation(state, () => partySessionService.leaveRoom()));
+  onMessage('popup:leave-room', () => runPopupAction(store, () => partySessionService.leaveRoom()));
 
   onMessage('popup:update-settings', ({ data }) =>
-    runMutation(state, async () => {
-      await settingsStore.updateSettings(data);
-      syncBackgroundState(state);
-    }),
+    runPopupAction(store, () => settingsStore.updateSettings(data)),
   );
 }
 

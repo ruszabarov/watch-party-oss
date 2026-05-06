@@ -19,21 +19,10 @@ import type {
 } from '@open-watch-party/shared';
 
 import { getErrorMessage } from '$lib/errors.js';
-import type { ServiceContentContext } from '../protocol/extension';
+import type { WatchPageContext } from '../protocol/extension';
 import type { BackgroundBus } from './bus';
 import { RealtimeConnection } from './realtime-connection';
-import {
-  clearControlledTab,
-  clearSession,
-  selectSession,
-  setControlledTab,
-  setJoinedSession,
-  setSessionError,
-  syncBackgroundState,
-  type BackgroundState,
-  updateSessionConnectionStatus,
-  updateSessionRoom,
-} from './state';
+import { selectSession, type BackgroundState, type BackgroundStore } from './state';
 import type { SettingsStore } from './settings-store';
 
 const ACTIVE_ROOM_EXISTS_ERROR = 'Leave your current room before joining or creating another room.';
@@ -43,16 +32,19 @@ export class PartySessionService {
   private connection: RealtimeConnection | null = null;
 
   constructor(
-    private readonly state: BackgroundState,
+    private readonly store: BackgroundStore,
     private readonly bus: BackgroundBus,
     private readonly settingsStore: SettingsStore,
   ) {}
 
+  private get state(): BackgroundState {
+    return this.store.getSnapshot().context;
+  }
+
   registerEventHandlers(): void {
     this.bus.on('controlled-tab:playback-update', ({ update }) => {
       void this.sendPlaybackUpdate(update, true).catch((error) => {
-        this.state.lastError = getErrorMessage(error);
-        syncBackgroundState(this.state);
+        this.store.trigger.setLastError({ message: getErrorMessage(error) });
       });
     });
   }
@@ -73,15 +65,17 @@ export class PartySessionService {
 
       await this.applyRoomResponse(response);
     } catch (error) {
-      setSessionError(this.state, getErrorMessage(error), { clearSession: true });
+      this.store.trigger.setSessionError({
+        message: getErrorMessage(error),
+        clearSession: true,
+      });
       await this.settingsStore.persist();
-      syncBackgroundState(this.state);
     }
   }
 
   async createRoom(
     tabId: number,
-    context: ServiceContentContext,
+    context: WatchPageContext,
     playback: PlaybackUpdateDraft,
   ): Promise<void> {
     this.assertNoActiveSession();
@@ -95,7 +89,7 @@ export class PartySessionService {
       initialPlayback,
     });
 
-    setControlledTab(this.state, tabId, context);
+    this.store.trigger.setControlledTab({ tabId, context });
     await this.applyRoomResponse(response);
     this.bus.emit('session:snapshot-updated', undefined);
   }
@@ -124,10 +118,8 @@ export class PartySessionService {
     }
 
     this.closeConnection();
-    clearSession(this.state);
-    clearControlledTab(this.state);
+    this.store.trigger.leaveRoom();
     await this.settingsStore.persist();
-    syncBackgroundState(this.state);
   }
 
   async sendPlaybackUpdate(update: PlaybackUpdateDraft, isLocalRelay = false): Promise<void> {
@@ -139,8 +131,9 @@ export class PartySessionService {
 
     const playbackContext = this.state.controlledTab?.context ?? null;
     if (playbackContext && playbackContext.mediaId !== update.mediaId) {
-      this.state.lastWarning = 'Local title no longer matches the active room.';
-      syncBackgroundState(this.state);
+      this.store.trigger.setLastWarning({
+        message: 'Local title no longer matches the active room.',
+      });
       return;
     }
 
@@ -179,9 +172,7 @@ export class PartySessionService {
         return;
       }
 
-      updateSessionConnectionStatus(this.state, status);
-      this.state.lastError = errorMessage ?? (status === 'connected' ? null : this.state.lastError);
-      syncBackgroundState(this.state);
+      this.store.trigger.updateSessionConnectionStatus({ status, errorMessage });
     });
 
     connection.onReconnect(async () => {
@@ -197,8 +188,7 @@ export class PartySessionService {
         return;
       }
 
-      updateSessionRoom(this.state, snapshot);
-      syncBackgroundState(this.state);
+      this.store.trigger.updateSessionRoom({ room: snapshot });
     });
 
     connection.on('playback:state', async (snapshot) => {
@@ -206,9 +196,8 @@ export class PartySessionService {
         return;
       }
 
-      updateSessionRoom(this.state, snapshot);
+      this.store.trigger.updateSessionRoom({ room: snapshot });
       this.bus.emit('session:snapshot-updated', undefined);
-      syncBackgroundState(this.state);
     });
   }
 
@@ -228,8 +217,7 @@ export class PartySessionService {
       await this.applyRoomResponse(response);
       this.bus.emit('session:snapshot-updated', undefined);
     } catch (error) {
-      setSessionError(this.state, getErrorMessage(error));
-      syncBackgroundState(this.state);
+      this.store.trigger.setSessionError({ message: getErrorMessage(error) });
     }
   }
 
@@ -247,10 +235,8 @@ export class PartySessionService {
           ? currentSession.playbackClientSequence
           : 0,
     };
-    setJoinedSession(this.state, nextSession, response.snapshot);
-    this.state.lastError = null;
+    this.store.trigger.setJoinedSession({ session: nextSession, room: response.snapshot });
     await this.settingsStore.persistSession(nextSession);
-    syncBackgroundState(this.state);
   }
 
   private async emitRoomCreate(payload: CreateRoomRequest): Promise<RoomResponse> {
@@ -290,8 +276,7 @@ export class PartySessionService {
   }
 
   private applyPlaybackSnapshot(snapshot: PartySnapshot): void {
-    updateSessionRoom(this.state, snapshot);
-    syncBackgroundState(this.state);
+    this.store.trigger.updateSessionRoom({ room: snapshot });
   }
 
   private async getConnection(): Promise<RealtimeConnection> {

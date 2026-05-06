@@ -1,13 +1,8 @@
 import type { ServiceId } from '@open-watch-party/shared';
 
-export interface ServiceContentContext {
+export interface WatchPageContext {
   serviceId: ServiceId;
-  href: string;
-  title: string;
-  mediaTitle: string;
   mediaId: string;
 }
 
-export type ApplySnapshotResult =
-  | { applied: true }
-  | { applied: false; reason?: string };
+export type ApplySnapshotResult = { applied: true } | { applied: false; reason?: string };

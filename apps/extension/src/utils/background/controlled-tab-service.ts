@@ -1,20 +1,13 @@
 import { browser } from 'wxt/browser';
 import type { PartySnapshot, PlaybackUpdateDraft } from '@open-watch-party/shared';
-import type { ApplySnapshotResult, ServiceContentContext } from '../protocol/extension';
+import type { ApplySnapshotResult, WatchPageContext } from '../protocol/extension';
 import { sendMessage } from '../protocol/messaging';
 import { getPlugin } from '../services/plugins';
-import {
-  clearControlledTab,
-  selectRoom,
-  selectSession,
-  setControlledTab,
-  syncBackgroundState,
-  type BackgroundState,
-} from './state';
+import { selectRoom, selectSession, type BackgroundState, type BackgroundStore } from './state';
 import type { BackgroundBus } from './bus';
 
 interface ControllableWatchTabState {
-  context: ServiceContentContext;
+  context: WatchPageContext;
   playback: PlaybackUpdateDraft;
 }
 
@@ -24,9 +17,13 @@ function isPluginUrl(plugin: { matchesUrl(url: URL): boolean }, rawUrl: string):
 
 export class ControlledTabService {
   constructor(
-    private readonly state: BackgroundState,
+    private readonly store: BackgroundStore,
     private readonly bus: BackgroundBus,
   ) {}
+
+  private get state(): BackgroundState {
+    return this.store.getSnapshot().context;
+  }
 
   registerEventHandlers(): void {
     this.bus.on('session:snapshot-updated', () => {
@@ -39,8 +36,9 @@ export class ControlledTabService {
         const session = selectSession(this.state);
         const sessionPlugin = session ? getPlugin(session.serviceId) : null;
         if (sessionPlugin && !isPluginUrl(sessionPlugin, tab.url)) {
-          this.state.lastWarning = `The controlled tab left ${sessionPlugin.descriptor.label}.`;
-          syncBackgroundState(this.state);
+          this.store.trigger.setLastWarning({
+            message: `The controlled tab left ${sessionPlugin.descriptor.label}.`,
+          });
         }
       }
     });
@@ -49,28 +47,27 @@ export class ControlledTabService {
       if (this.state.controlledTab?.tabId === tabId) {
         const session = selectSession(this.state);
         const sessionPlugin = session ? getPlugin(session.serviceId) : null;
-        clearControlledTab(this.state);
-        this.state.lastWarning = sessionPlugin
-          ? `The controlled ${sessionPlugin.descriptor.label} tab was closed.`
-          : 'The controlled tab was closed.';
-        syncBackgroundState(this.state);
+        this.store.trigger.clearControlledTab();
+        this.store.trigger.setLastWarning({
+          message: sessionPlugin
+            ? `The controlled ${sessionPlugin.descriptor.label} tab was closed.`
+            : 'The controlled tab was closed.',
+        });
       }
     });
   }
 
-  recordContentContext(tabId: number, context: ServiceContentContext | null): void {
+  recordContentContext(tabId: number, context: WatchPageContext | null): void {
     if (this.state.controlledTab?.tabId !== tabId) {
       return;
     }
 
     if (!context) {
-      clearControlledTab(this.state);
-      syncBackgroundState(this.state);
+      this.store.trigger.clearControlledTab();
       return;
     }
 
-    setControlledTab(this.state, tabId, context);
-    syncBackgroundState(this.state);
+    this.store.trigger.setControlledTab({ tabId, context });
   }
 
   relayControlledPlaybackUpdate(tabId: number, update: PlaybackUpdateDraft): void {
@@ -90,13 +87,10 @@ export class ControlledTabService {
     if (!this.state.controlledTab) {
       const context = await this.requestContextFromTab(tabId);
       if (context?.serviceId === room.serviceId && context.mediaId === room.playback.mediaId) {
-        setControlledTab(this.state, tabId, context);
+        this.store.trigger.setControlledTab({ tabId, context });
       }
     }
 
-    if (this.state.controlledTab?.tabId === tabId) {
-      syncBackgroundState(this.state);
-    }
     await this.applySnapshotToControlledTab();
   }
 
@@ -123,13 +117,17 @@ export class ControlledTabService {
     const result = await this.applySnapshotToTab(controlledTab.tabId, room);
 
     if (!result) {
-      this.state.lastWarning = sessionPlugin
-        ? `${sessionPlugin.descriptor.label} tab is not ready for sync yet.`
-        : 'Controlled tab is not ready for sync yet.';
+      this.store.trigger.setLastWarning({
+        message: sessionPlugin
+          ? `${sessionPlugin.descriptor.label} tab is not ready for sync yet.`
+          : 'Controlled tab is not ready for sync yet.',
+      });
       return;
     }
 
-    this.state.lastWarning = result.applied ? null : (result.reason ?? 'Sync was skipped.');
+    this.store.trigger.setLastWarning({
+      message: result.applied ? null : (result.reason ?? 'Sync was skipped.'),
+    });
   }
 
   async navigateControlledTabToRoom(
@@ -138,10 +136,9 @@ export class ControlledTabService {
     options: { active?: boolean } = {},
   ): Promise<void> {
     if (this.state.controlledTab?.tabId === tabId) {
-      clearControlledTab(this.state);
+      this.store.trigger.clearControlledTab();
     }
-    this.state.lastWarning = null;
-    syncBackgroundState(this.state);
+    this.store.trigger.setLastWarning({ message: null });
 
     try {
       await browser.tabs.update(tabId, {
@@ -164,10 +161,6 @@ export class ControlledTabService {
       throw new Error('This tab is not on a supported streaming service.');
     }
 
-    if (plugin.extractMediaId(new URL(context.href)) === null) {
-      throw new Error(`${plugin.descriptor.label} tab is not on a supported watch page.`);
-    }
-
     const playback = await this.requestPlaybackFromTab(tabId);
 
     if (!playback || playback.mediaId !== context.mediaId) {
@@ -177,7 +170,7 @@ export class ControlledTabService {
     return { context, playback };
   }
 
-  private async requestContextFromTab(tabId: number): Promise<ServiceContentContext | null> {
+  private async requestContextFromTab(tabId: number): Promise<WatchPageContext | null> {
     try {
       const response = await sendMessage('party:request-context', undefined, { tabId });
       return response ?? null;

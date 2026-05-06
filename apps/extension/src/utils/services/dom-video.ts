@@ -1,7 +1,7 @@
 import type { PlaybackUpdateDraft, ServiceId } from '@open-watch-party/shared';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 
-import type { ServiceContentContext } from '../protocol/extension';
+import type { WatchPageContext } from '../protocol/extension';
 import { onMessage, sendMessage } from '../protocol/messaging';
 import { SERVICE_PLUGIN_BY_ID } from './plugins';
 
@@ -20,15 +20,12 @@ export function runServiceContentScript(serviceId: ServiceId) {
       let refreshFrame: number | null = null;
       let stopped = false;
 
-      const readContext = (): ServiceContentContext | null => {
+      const readContext = (): WatchPageContext | null => {
         const mediaId = plugin.extractMediaId(new URL(window.location.href));
         if (!activeVideo || mediaId === null) return null;
 
         return {
           serviceId,
-          href: window.location.href,
-          title: document.title,
-          mediaTitle: plugin.getMediaTitle(),
           mediaId,
         };
       };
@@ -71,7 +68,7 @@ export function runServiceContentScript(serviceId: ServiceId) {
 
       const sendContextIfChanged = () => {
         const context = readContext();
-        const key = context ? `${context.href}::${context.mediaId}` : null;
+        const key = context ? `${context.serviceId}::${context.mediaId}` : null;
 
         if (key === lastContextKey) return;
         lastContextKey = key;
@@ -159,9 +156,7 @@ export function runServiceContentScript(serviceId: ServiceId) {
             suppressNextEvent = false;
           }
 
-          return result.ok
-            ? { applied: true }
-            : { applied: false, reason: result.reason };
+          return result.ok ? { applied: true } : { applied: false, reason: result.reason };
         }),
       );
 
