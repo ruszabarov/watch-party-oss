@@ -8,8 +8,6 @@ export interface ServiceContentContext {
   mediaId: string;
 }
 
-export interface ApplySnapshotResult {
-  applied: boolean;
-  reason?: string;
-  context: ServiceContentContext | null;
-}
+export type ApplySnapshotResult =
+  | { applied: true }
+  | { applied: false; reason?: string };

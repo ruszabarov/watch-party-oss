@@ -142,10 +142,8 @@ export function runServiceContentScript(serviceId: ServiceId) {
 
       cleanups.push(
         onMessage('party:apply-snapshot', async ({ data }) => {
-          const context = readContext();
-
-          if (!activeVideo || !context) {
-            return { applied: false, reason: plugin.playerNotReadyMessage, context };
+          if (!activeVideo || !readContext()) {
+            return { applied: false, reason: plugin.playerNotReadyMessage };
           }
 
           const target = {
@@ -162,8 +160,8 @@ export function runServiceContentScript(serviceId: ServiceId) {
           }
 
           return result.ok
-            ? { applied: true, context: readContext() }
-            : { applied: false, reason: result.reason, context: readContext() };
+            ? { applied: true }
+            : { applied: false, reason: result.reason };
         }),
       );
 

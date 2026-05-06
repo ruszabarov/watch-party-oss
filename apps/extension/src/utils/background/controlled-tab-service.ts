@@ -130,12 +130,6 @@ export class ControlledTabService {
       return;
     }
 
-    if (result.context) {
-      setControlledTab(this.state, controlledTab.tabId, result.context);
-    } else {
-      clearControlledTab(this.state);
-    }
-
     this.state.lastWarning = result.applied ? null : (result.reason ?? 'Sync was skipped.');
   }
 
