@@ -13,7 +13,6 @@ export const NETFLIX_DEFINITION = {
     accent: '#e50914',
     accentContrast: '#ffffff',
     glyph: 'N',
-    watchPathHint: 'netflix.com/watch/...',
   },
   contentMatches: ['*://*.netflix.com/*'],
   matchesUrl: (url: URL) => NETFLIX_HOST_RE.test(url.hostname),

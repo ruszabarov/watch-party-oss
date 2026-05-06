@@ -3,10 +3,7 @@
   import { Input } from "$lib/components/ui/input/index.js";
   import { Label } from "$lib/components/ui/label/index.js";
   import type { ActiveTabSummary } from "$lib/active-tab.js";
-  import {
-    SUPPORTED_SERVICE_DESCRIPTORS,
-    getServiceDescriptor,
-  } from "$lib/services/registry.js";
+  import { getServiceDescriptor } from "$lib/services/registry.js";
   import ServiceBadge from "./ServiceBadge.svelte";
 
   interface Props {
@@ -20,7 +17,9 @@
 
   let joinCode = $state("");
 
-  const activeDescriptor = $derived(getServiceDescriptor(activeTab.activeServiceId));
+  const activeDescriptor = $derived(
+    getServiceDescriptor(activeTab.activeServiceId),
+  );
 
   const isReady = $derived(activeTab.isWatchPage);
   const canCreate = $derived(isReady && !isBusy);
@@ -30,19 +29,7 @@
     if (isReady) {
       return activeTab.title || activeDescriptor?.label || "Ready to start";
     }
-    return "Open a video page to create a room";
-  });
-
-  const hint = $derived.by(() => {
-    if (isReady) {
-      return activeDescriptor
-        ? `Watching on ${activeDescriptor.label}. Invite friends with a code.`
-        : "Create a room or join one with a code.";
-    }
-    const watchPageHint = SUPPORTED_SERVICE_DESCRIPTORS.map(
-      (d) => d.watchPathHint,
-    ).join(", ");
-    return `Create rooms from a playback page — try ${watchPageHint}. You can join with a code from any tab.`;
+    return "Open a supported video page to create a room";
   });
 
   const trimmedCode = $derived(joinCode.trim());
@@ -61,21 +48,18 @@
 </script>
 
 <section class="flex flex-col gap-3">
-  <div class="flex items-start gap-3">
-    <ServiceBadge serviceId={activeTab.activeServiceId} />
+  <div class="flex items-center gap-3">
+    {#if activeDescriptor}
+      <ServiceBadge serviceId={activeTab.activeServiceId} />
+    {/if}
     <div class="min-w-0 space-y-1">
       <p class="m-0 text-sm font-semibold leading-5">
         {title}
       </p>
-      <p class="m-0 text-sm leading-5 text-muted-foreground">{hint}</p>
     </div>
   </div>
 
-  <Button
-    class="font-semibold"
-    onclick={onCreateRoom}
-    disabled={!canCreate}
-  >
+  <Button class="font-semibold" onclick={onCreateRoom} disabled={!canCreate}>
     Create room
   </Button>
 
@@ -88,7 +72,10 @@
       handleJoin();
     }}
   >
-    <Label class="text-xs font-semibold uppercase tracking-wide text-muted-foreground" for="join-code">
+    <Label
+      class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+      for="join-code"
+    >
       Have a code?
     </Label>
     <div class="flex gap-2">

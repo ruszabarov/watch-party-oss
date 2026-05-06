@@ -32,7 +32,6 @@ export const YOUTUBE_DEFINITION = {
     accent: '#ff0033',
     accentContrast: '#ffffff',
     glyph: 'Y',
-    watchPathHint: 'youtube.com/watch?v=...',
   },
   contentMatches: ['*://*.youtube.com/*', '*://youtu.be/*', '*://*.youtube-nocookie.com/*'],
   matchesUrl: (url: URL) => YOUTUBE_HOST_RE.test(url.hostname),

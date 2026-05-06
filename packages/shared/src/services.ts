@@ -6,7 +6,6 @@ export type ServiceDescriptor = {
   readonly accent: string;
   readonly accentContrast: string;
   readonly glyph: string;
-  readonly watchPathHint: string;
 };
 
 export type ServiceDefinition = {
