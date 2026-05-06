@@ -17,15 +17,10 @@ export default defineBackground(() => {
   const bus = createBackgroundBus();
   const settingsStore = new SettingsStore(state);
   const controlledTabService = new ControlledTabService(state, bus);
-  const partySessionService = new PartySessionService(
-    state,
-    bus,
-    settingsStore,
-    controlledTabService,
-  );
+  const partySessionService = new PartySessionService(state, bus, settingsStore);
 
   registerContentHandlers(controlledTabService);
-  registerPopupHandlers(state, settingsStore, partySessionService);
+  registerPopupHandlers(state, settingsStore, controlledTabService, partySessionService);
   controlledTabService.registerEventHandlers();
   partySessionService.registerEventHandlers();
 
@@ -47,14 +42,19 @@ async function runMutation(state: BackgroundState, handler: () => Promise<void>)
 function registerPopupHandlers(
   state: BackgroundState,
   settingsStore: SettingsStore,
+  controlledTabService: ControlledTabService,
   partySessionService: PartySessionService,
 ): void {
   onMessage('popup:create-room', ({ data }) =>
-    runMutation(state, () => partySessionService.createRoom(data.tabId)),
+    runMutation(state, () =>
+      createRoomFromTab(data.tabId, controlledTabService, partySessionService),
+    ),
   );
 
   onMessage('popup:join-room', ({ data }) =>
-    runMutation(state, () => partySessionService.joinRoom(data.roomCode, data.tabId)),
+    runMutation(state, () =>
+      joinRoomFromTab(data.roomCode, data.tabId, controlledTabService, partySessionService),
+    ),
   );
 
   onMessage('popup:leave-room', () => runMutation(state, () => partySessionService.leaveRoom()));
@@ -65,6 +65,30 @@ function registerPopupHandlers(
       syncBackgroundState(state);
     }),
   );
+}
+
+async function createRoomFromTab(
+  tabId: number,
+  controlledTabService: ControlledTabService,
+  partySessionService: PartySessionService,
+): Promise<void> {
+  const { context, playback } = await controlledTabService.requireControllableWatchTab(tabId);
+  await partySessionService.createRoom(tabId, context, playback);
+}
+
+async function joinRoomFromTab(
+  roomCode: string,
+  tabId: number,
+  controlledTabService: ControlledTabService,
+  partySessionService: PartySessionService,
+): Promise<void> {
+  const response = await partySessionService.joinRoom(roomCode);
+  try {
+    await controlledTabService.navigateControlledTabToRoom(tabId, response.snapshot.watchUrl);
+  } catch (error) {
+    await partySessionService.leaveRoom();
+    throw error;
+  }
 }
 
 function registerContentHandlers(controlledTabService: ControlledTabService): void {

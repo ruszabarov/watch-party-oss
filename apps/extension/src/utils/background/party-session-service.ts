@@ -19,6 +19,7 @@ import type {
 } from '@open-watch-party/shared';
 
 import { getErrorMessage } from '$lib/errors.js';
+import type { ServiceContentContext } from '../protocol/extension';
 import type { BackgroundBus } from './bus';
 import { RealtimeConnection } from './realtime-connection';
 import {
@@ -34,7 +35,6 @@ import {
   updateSessionRoom,
 } from './state';
 import type { SettingsStore } from './settings-store';
-import type { ControlledTabService } from './controlled-tab-service';
 
 const ACTIVE_ROOM_EXISTS_ERROR = 'Leave your current room before joining or creating another room.';
 const SERVER_URL = __DEFAULT_SERVER_URL__;
@@ -46,7 +46,6 @@ export class PartySessionService {
     private readonly state: BackgroundState,
     private readonly bus: BackgroundBus,
     private readonly settingsStore: SettingsStore,
-    private readonly controlledTab: ControlledTabService,
   ) {}
 
   registerEventHandlers(): void {
@@ -80,10 +79,13 @@ export class PartySessionService {
     }
   }
 
-  async createRoom(tabId: number): Promise<void> {
+  async createRoom(
+    tabId: number,
+    context: ServiceContentContext,
+    playback: PlaybackUpdateDraft,
+  ): Promise<void> {
     this.assertNoActiveSession();
 
-    const { context, playback } = await this.controlledTab.requireControllableWatchTab(tabId);
     const { serviceId: _playbackServiceId, ...initialPlayback } = playback;
 
     const response = await this.emitRoomCreate({
@@ -98,7 +100,7 @@ export class PartySessionService {
     this.bus.emit('session:snapshot-updated', undefined);
   }
 
-  async joinRoom(roomCode: string, tabId: number): Promise<void> {
+  async joinRoom(roomCode: string): Promise<RoomResponse> {
     this.assertNoActiveSession();
 
     const response = await this.emitRoomJoin({
@@ -108,13 +110,7 @@ export class PartySessionService {
     });
 
     await this.applyRoomResponse(response);
-
-    try {
-      await this.controlledTab.navigateControlledTabToRoom(tabId, response.snapshot.watchUrl);
-    } catch (error) {
-      await this.leaveRoom();
-      throw error;
-    }
+    return response;
   }
 
   async leaveRoom(): Promise<void> {
@@ -141,7 +137,7 @@ export class PartySessionService {
       throw new Error('Join or create a room first.');
     }
 
-    const playbackContext = this.controlledTab.getControlledTabContext();
+    const playbackContext = this.state.controlledTab?.context ?? null;
     if (playbackContext && playbackContext.mediaId !== update.mediaId) {
       this.state.lastWarning = 'Local title no longer matches the active room.';
       syncBackgroundState(this.state);

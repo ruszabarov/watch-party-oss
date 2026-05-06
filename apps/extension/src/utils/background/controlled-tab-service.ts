@@ -13,8 +13,7 @@ import {
 } from './state';
 import type { BackgroundBus } from './bus';
 
-interface ControllableWatchTab {
-  tabId: number;
+interface ControllableWatchTabState {
   context: ServiceContentContext;
   playback: PlaybackUpdateDraft;
 }
@@ -154,7 +153,7 @@ export class ControlledTabService {
     }
   }
 
-  async requireControllableWatchTab(tabId: number): Promise<ControllableWatchTab> {
+  async requireControllableWatchTab(tabId: number): Promise<ControllableWatchTabState> {
     const context = await this.requestContextFromTab(tabId);
     if (!context) {
       throw new Error('Open a supported watch page before starting a party.');
@@ -175,11 +174,7 @@ export class ControlledTabService {
       throw new Error(`${plugin.descriptor.label} playback state is not ready yet.`);
     }
 
-    return { tabId, context, playback };
-  }
-
-  getControlledTabContext(): ServiceContentContext | null {
-    return this.state.controlledTab?.context ?? null;
+    return { context, playback };
   }
 
   private async requestContextFromTab(tabId: number): Promise<ServiceContentContext | null> {
