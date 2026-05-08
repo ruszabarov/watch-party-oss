@@ -65,7 +65,20 @@ pnpm check
 pnpm build
 pnpm build:firefox
 pnpm build:safari
-make safari
+```
+
+Create a Safari Xcode wrapper from the generated extension resources:
+
+```bash
+xcrun safari-web-extension-converter apps/extension/.output/safari-mv2 \
+  --project-location apps/safari \
+  --app-name "Open Watch Party" \
+  --bundle-identifier com.ruszabarov.openwatchparty \
+  --swift \
+  --macos-only \
+  --copy-resources \
+  --no-open \
+  --no-prompt
 ```
 
 ## Extension Environment
@@ -125,6 +138,7 @@ pnpm release:server:dry-run patch
 The extension release command bumps `apps/extension/package.json`, commits the
 change, creates an `extension-v*` tag, and pushes it. The extension release
 workflow packages Chrome, Firefox, Firefox sources, and Safari zips, uploads all
-zips to the GitHub Release page, and submits Chrome and Firefox through WXT.
-Safari publishing remains manual; download the Safari zip from the GitHub
-Release and use Apple's conversion/wrapper flow.
+zips to the GitHub Release page, submits Chrome and Firefox through WXT, and
+uploads a macOS Safari Xcode project zip. Safari publishing remains manual;
+download the Safari Xcode project zip from the GitHub Release, then sign,
+archive, and upload it from Xcode.
