@@ -27,6 +27,7 @@
     "@open-watch-party/shared": "workspace:*",
     "@tailwindcss/vite": "latest",
     "@tsconfig/svelte": "^5.0.8",
+    "@types/webextension-polyfill": "^0.12.5",
     "@wxt-dev/module-svelte": "^2.0.5",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
