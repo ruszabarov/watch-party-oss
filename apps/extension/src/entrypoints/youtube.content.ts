@@ -1,4 +1,4 @@
-import { runServiceContentScript } from '../services/dom-video';
-import { YOUTUBE_SERVICE } from '../services/youtube';
+import { runStreamingServiceContentScript } from '../streaming-services/dom-video';
+import { YOUTUBE_STREAMING_SERVICE } from '../streaming-services/youtube';
 
-export default runServiceContentScript('youtube', YOUTUBE_SERVICE);
+export default runStreamingServiceContentScript('youtube', YOUTUBE_STREAMING_SERVICE);

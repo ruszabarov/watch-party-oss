@@ -7,7 +7,7 @@ import {
   type NetflixPlayerResponse,
   type NetflixRpcRequest,
   type NetflixRpcResponse,
-} from '../services/netflix-player-rpc';
+} from '../streaming-services/netflix-player-rpc';
 import type { NetflixPlayer } from '../types/netflix';
 
 function getNetflixPlayer(): NetflixPlayer | null {

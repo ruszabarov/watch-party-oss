@@ -1,9 +1,9 @@
-import type { PlaybackUpdate, ServiceId } from '@open-watch-party/shared';
+import type { PlaybackUpdate, StreamingServiceId } from '@open-watch-party/shared';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 
 import type { ApplySnapshotResult, WatchPageContext } from '../messaging';
 import { onMessage, sendMessage } from '../messaging';
-import type { PlaybackApplyContext, PlaybackStatus, ServicePlugin } from './types';
+import type { PlaybackApplyContext, PlaybackStatus, StreamingServiceIntegration } from './types';
 
 const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'ended'] as const;
 const SEEK_THRESHOLD_SEC = 1.5;
@@ -39,9 +39,12 @@ async function applyHtml5Playback({
   return { applied: true };
 }
 
-export function runServiceContentScript(serviceId: ServiceId, plugin: ServicePlugin) {
+export function runStreamingServiceContentScript(
+  streamingServiceId: StreamingServiceId,
+  integration: StreamingServiceIntegration,
+) {
   return defineContentScript({
-    matches: [...plugin.contentMatches],
+    matches: [...integration.contentMatches],
     main() {
       let activeVideo: HTMLVideoElement | null = null;
       let lastContextKey: string | null = null;
@@ -53,29 +56,29 @@ export function runServiceContentScript(serviceId: ServiceId, plugin: ServicePlu
 
       const getPlaybackStatus = (): PlaybackStatus | null => {
         if (!activeVideo) return null;
-        return plugin.getPlaybackStatus?.(activeVideo) ?? SYNCABLE_PLAYBACK_STATUS;
+        return integration.getPlaybackStatus?.(activeVideo) ?? SYNCABLE_PLAYBACK_STATUS;
       };
 
       const readContext = (): WatchPageContext | null => {
-        const mediaId = plugin.extractMediaId(new URL(window.location.href));
+        const mediaId = integration.extractMediaId(new URL(window.location.href));
         if (!activeVideo || mediaId === null) return null;
 
         return {
-          serviceId,
+          streamingServiceId,
           mediaId,
-          title: plugin.getMediaTitle() || undefined,
+          title: integration.getMediaTitle() || undefined,
         };
       };
 
       const readPlayback = (): PlaybackUpdate | null => {
-        const mediaId = plugin.extractMediaId(new URL(window.location.href));
+        const mediaId = integration.extractMediaId(new URL(window.location.href));
         if (!activeVideo || mediaId === null) return null;
         if (getPlaybackStatus()?.syncable === false) return null;
 
         return {
-          serviceId,
+          streamingServiceId,
           mediaId,
-          title: plugin.getMediaTitle(),
+          title: integration.getMediaTitle(),
           positionSec: Number(activeVideo.currentTime.toFixed(3)),
           playing: !activeVideo.paused,
         };
@@ -83,7 +86,7 @@ export function runServiceContentScript(serviceId: ServiceId, plugin: ServicePlu
 
       const sendContextIfChanged = (force = false) => {
         const context = readContext();
-        const key = context ? `${context.serviceId}::${context.mediaId}` : null;
+        const key = context ? `${context.streamingServiceId}::${context.mediaId}` : null;
 
         if (!force && key === lastContextKey) return;
         lastContextKey = key;
@@ -121,7 +124,7 @@ export function runServiceContentScript(serviceId: ServiceId, plugin: ServicePlu
       const playbackStatusObserver = new MutationObserver(scheduleRefresh);
 
       const bindVideo = () => {
-        const video = plugin.getVideo();
+        const video = integration.getVideo();
         if (video === activeVideo) return;
 
         if (activeVideo) {
@@ -136,7 +139,9 @@ export function runServiceContentScript(serviceId: ServiceId, plugin: ServicePlu
       };
 
       const bindPlaybackStatusTarget = () => {
-        const target = activeVideo ? (plugin.getPlaybackStatusTarget?.(activeVideo) ?? null) : null;
+        const target = activeVideo
+          ? (integration.getPlaybackStatusTarget?.(activeVideo) ?? null)
+          : null;
         if (target === playbackStatusTarget) return;
 
         playbackStatusObserver.disconnect();
@@ -182,7 +187,7 @@ export function runServiceContentScript(serviceId: ServiceId, plugin: ServicePlu
       cleanups.push(
         onMessage('party:apply-snapshot', async ({ data }) => {
           if (!activeVideo || !readContext()) {
-            return { applied: false, reason: plugin.playerNotReadyMessage };
+            return { applied: false, reason: integration.playerNotReadyMessage };
           }
 
           const playbackStatus = getPlaybackStatus();
@@ -192,7 +197,7 @@ export function runServiceContentScript(serviceId: ServiceId, plugin: ServicePlu
 
           suppressPlaybackEventsUntil = performance.now() + APPLIED_SNAPSHOT_EVENT_SUPPRESSION_MS;
 
-          const result = await (plugin.applyPlayback ?? applyHtml5Playback)({
+          const result = await (integration.applyPlayback ?? applyHtml5Playback)({
             video: activeVideo,
             snapshot: data,
           }).catch(() => ({

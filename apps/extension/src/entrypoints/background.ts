@@ -1,8 +1,8 @@
 import { defineBackground } from 'wxt/utils/define-background';
 
 import { getErrorMessage } from '~/utils/errors.js';
-import { ControlledTabService } from '../background/controlled-tab-service';
-import { PartySessionService } from '../background/party-session-service';
+import { ControlledTabService } from '../background/controlled-tab.service';
+import { PartySessionService } from '../background/party-session.service';
 import {
   createBackgroundStore,
   type BackgroundState,

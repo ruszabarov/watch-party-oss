@@ -1,19 +1,19 @@
 <script lang="ts">
-  import type { ServiceId } from '@open-watch-party/shared';
+  import type { StreamingServiceId } from '@open-watch-party/shared';
   import {
-    SUPPORTED_SERVICE_DESCRIPTORS,
-    getServiceDescriptor,
-  } from '~/services/catalog.js';
+    SUPPORTED_STREAMING_SERVICE_DESCRIPTORS,
+    getStreamingServiceDescriptor,
+  } from '~/streaming-services/catalog.js';
 
   interface Props {
-    serviceId?: ServiceId | null;
+    streamingServiceId?: StreamingServiceId | null;
     size?: 'sm' | 'md';
   }
 
-  const { serviceId = null, size = 'md' }: Props = $props();
+  const { streamingServiceId = null, size = 'md' }: Props = $props();
 
   const descriptor = $derived(
-    getServiceDescriptor(serviceId) ?? SUPPORTED_SERVICE_DESCRIPTORS[0],
+    getStreamingServiceDescriptor(streamingServiceId) ?? SUPPORTED_STREAMING_SERVICE_DESCRIPTORS[0],
   );
 </script>
 

@@ -4,7 +4,7 @@ import {
   applyPlaybackUpdate,
   createRoomRequestSchema,
   createRoomState,
-  findServiceDefinitionByUrl,
+  findStreamingServiceDefinitionByUrl,
   joinRoomRequestSchema,
   MAX_MEMBER_NAME_LENGTH,
   MAX_PLAYBACK_POSITION_SEC,
@@ -13,9 +13,9 @@ import {
   normalizeRoomCode,
   resolvePlaybackState,
   sanitizeMemberName,
-  SERVICE_DEFINITION_BY_ID,
-  SUPPORTED_SERVICES,
-  SUPPORTED_SERVICE_CONTENT_MATCHES,
+  STREAMING_SERVICE_DEFINITION_BY_ID,
+  SUPPORTED_STREAMING_SERVICES,
+  SUPPORTED_STREAMING_SERVICE_CONTENT_MATCHES,
   toPartySnapshot,
   upsertRoomMember,
 } from '../src';
@@ -31,7 +31,7 @@ describe('room reducer', () => {
       {
         memberId: 'member-a',
         memberName: 'Member A',
-        serviceId: 'netflix',
+        streamingServiceId: 'netflix',
         initialPlayback: {
           mediaId: '123',
           title: 'Example',
@@ -48,7 +48,7 @@ describe('room reducer', () => {
     applyPlaybackUpdate(
       room,
       {
-        serviceId: 'netflix',
+        streamingServiceId: 'netflix',
         mediaId: '123',
         title: 'Example',
         positionSec: 10,
@@ -61,7 +61,7 @@ describe('room reducer', () => {
     applyPlaybackUpdate(
       room,
       {
-        serviceId: 'netflix',
+        streamingServiceId: 'netflix',
         mediaId: '123',
         title: 'Example',
         positionSec: 12,
@@ -83,7 +83,7 @@ describe('room reducer', () => {
       {
         memberId: 'member-a',
         memberName: 'Member A',
-        serviceId: 'netflix',
+        streamingServiceId: 'netflix',
         initialPlayback: {
           mediaId: '456',
           title: 'Example',
@@ -99,7 +99,7 @@ describe('room reducer', () => {
     applyPlaybackUpdate(
       room,
       {
-        serviceId: 'netflix',
+        streamingServiceId: 'netflix',
         mediaId: '456',
         title: 'Example',
         positionSec: 25,
@@ -122,7 +122,7 @@ describe('room reducer', () => {
       {
         memberId: 'member-a',
         memberName: 'Member A',
-        serviceId: 'youtube',
+        streamingServiceId: 'youtube',
         initialPlayback: {
           mediaId: 'abc123',
           title: 'Clip',
@@ -137,93 +137,109 @@ describe('room reducer', () => {
     expect(snapshot.watchUrl).toBe('https://www.youtube.com/watch?v=abc123');
   });
 
-  it('builds canonical watch urls per service', () => {
-    expect(SERVICE_DEFINITION_BY_ID.netflix.buildCanonicalWatchUrl('123456')).toBe(
+  it('builds canonical watch urls per streamingService', () => {
+    expect(STREAMING_SERVICE_DEFINITION_BY_ID.netflix.buildCanonicalWatchUrl('123456')).toBe(
       'https://www.netflix.com/watch/123456',
     );
-    expect(SERVICE_DEFINITION_BY_ID.youtube.buildCanonicalWatchUrl('abc123_-')).toBe(
+    expect(STREAMING_SERVICE_DEFINITION_BY_ID.youtube.buildCanonicalWatchUrl('abc123_-')).toBe(
       'https://www.youtube.com/watch?v=abc123_-',
     );
   });
 
-  it('classifies supported service watch urls', () => {
-    expect(findServiceDefinitionByUrl(new URL('https://www.netflix.com/watch/123456'))).toEqual({
-      serviceId: 'netflix',
-      service: expect.any(Object),
+  it('classifies supported streamingService watch urls', () => {
+    expect(
+      findStreamingServiceDefinitionByUrl(new URL('https://www.netflix.com/watch/123456')),
+    ).toEqual({
+      streamingServiceId: 'netflix',
+      streamingService: expect.any(Object),
       isWatchPage: true,
     });
     expect(
-      findServiceDefinitionByUrl(
+      findStreamingServiceDefinitionByUrl(
         new URL('https://www.netflix.com/watch/123456?trackId=255824129&tctx=0%2C0'),
       ),
     ).toEqual({
-      serviceId: 'netflix',
-      service: expect.any(Object),
-      isWatchPage: true,
-    });
-    expect(findServiceDefinitionByUrl(new URL('https://www.netflix.com/watch/123456/'))).toEqual({
-      serviceId: 'netflix',
-      service: expect.any(Object),
+      streamingServiceId: 'netflix',
+      streamingService: expect.any(Object),
       isWatchPage: true,
     });
     expect(
-      findServiceDefinitionByUrl(new URL('https://www.netflix.com/watch/123456#metadata')),
+      findStreamingServiceDefinitionByUrl(new URL('https://www.netflix.com/watch/123456/')),
     ).toEqual({
-      serviceId: 'netflix',
-      service: expect.any(Object),
+      streamingServiceId: 'netflix',
+      streamingService: expect.any(Object),
       isWatchPage: true,
     });
-    expect(findServiceDefinitionByUrl(new URL('https://www.youtube.com/watch?v=abc123'))).toEqual({
-      serviceId: 'youtube',
-      service: expect.any(Object),
+    expect(
+      findStreamingServiceDefinitionByUrl(new URL('https://www.netflix.com/watch/123456#metadata')),
+    ).toEqual({
+      streamingServiceId: 'netflix',
+      streamingService: expect.any(Object),
       isWatchPage: true,
     });
-    expect(findServiceDefinitionByUrl(new URL('https://youtu.be/abc123'))).toEqual({
-      serviceId: 'youtube',
-      service: expect.any(Object),
+    expect(
+      findStreamingServiceDefinitionByUrl(new URL('https://www.youtube.com/watch?v=abc123')),
+    ).toEqual({
+      streamingServiceId: 'youtube',
+      streamingService: expect.any(Object),
       isWatchPage: true,
     });
-    expect(findServiceDefinitionByUrl(new URL('https://www.youtube.com/embed/abc123'))).toEqual({
-      serviceId: 'youtube',
-      service: expect.any(Object),
+    expect(findStreamingServiceDefinitionByUrl(new URL('https://youtu.be/abc123'))).toEqual({
+      streamingServiceId: 'youtube',
+      streamingService: expect.any(Object),
       isWatchPage: true,
     });
-    expect(findServiceDefinitionByUrl(new URL('https://www.youtube.com/live/abc123'))).toEqual({
-      serviceId: 'youtube',
-      service: expect.any(Object),
+    expect(
+      findStreamingServiceDefinitionByUrl(new URL('https://www.youtube.com/embed/abc123')),
+    ).toEqual({
+      streamingServiceId: 'youtube',
+      streamingService: expect.any(Object),
+      isWatchPage: true,
+    });
+    expect(
+      findStreamingServiceDefinitionByUrl(new URL('https://www.youtube.com/live/abc123')),
+    ).toEqual({
+      streamingServiceId: 'youtube',
+      streamingService: expect.any(Object),
       isWatchPage: true,
     });
   });
 
-  it('classifies supported service non-watch urls and unsupported urls', () => {
-    expect(findServiceDefinitionByUrl(new URL('https://www.netflix.com/browse'))).toEqual({
-      serviceId: 'netflix',
-      service: expect.any(Object),
+  it('classifies supported streamingService non-watch urls and unsupported urls', () => {
+    expect(findStreamingServiceDefinitionByUrl(new URL('https://www.netflix.com/browse'))).toEqual({
+      streamingServiceId: 'netflix',
+      streamingService: expect.any(Object),
       isWatchPage: false,
     });
     expect(
-      findServiceDefinitionByUrl(new URL('https://www.youtube.com/feed/subscriptions')),
+      findStreamingServiceDefinitionByUrl(new URL('https://www.youtube.com/feed/subscriptions')),
     ).toEqual({
-      serviceId: 'youtube',
-      service: expect.any(Object),
+      streamingServiceId: 'youtube',
+      streamingService: expect.any(Object),
       isWatchPage: false,
     });
-    expect(findServiceDefinitionByUrl(new URL('https://www.youtube.com/watch?v='))).toEqual({
-      serviceId: 'youtube',
-      service: expect.any(Object),
+    expect(
+      findStreamingServiceDefinitionByUrl(new URL('https://www.youtube.com/watch?v=')),
+    ).toEqual({
+      streamingServiceId: 'youtube',
+      streamingService: expect.any(Object),
       isWatchPage: false,
     });
-    expect(findServiceDefinitionByUrl(new URL('https://www.netflix.com/watch/123456abc'))).toEqual({
-      serviceId: 'netflix',
-      service: expect.any(Object),
+    expect(
+      findStreamingServiceDefinitionByUrl(new URL('https://www.netflix.com/watch/123456abc')),
+    ).toEqual({
+      streamingServiceId: 'netflix',
+      streamingService: expect.any(Object),
       isWatchPage: false,
     });
-    expect(findServiceDefinitionByUrl(new URL('https://example.com/watch/123'))).toBeUndefined();
+    expect(
+      findStreamingServiceDefinitionByUrl(new URL('https://example.com/watch/123')),
+    ).toBeUndefined();
   });
 
-  it('exposes supported service ids and content matches from one catalog', () => {
-    expect(SUPPORTED_SERVICES).toEqual(['netflix', 'youtube']);
-    expect(SUPPORTED_SERVICE_CONTENT_MATCHES).toEqual([
+  it('exposes supported streamingService ids and content matches from one catalog', () => {
+    expect(SUPPORTED_STREAMING_SERVICES).toEqual(['netflix', 'youtube']);
+    expect(SUPPORTED_STREAMING_SERVICE_CONTENT_MATCHES).toEqual([
       '*://*.netflix.com/*',
       '*://*.youtube.com/*',
       '*://youtu.be/*',
@@ -232,13 +248,13 @@ describe('room reducer', () => {
   });
 
   it('rejects invalid media ids when deriving canonical watch urls', () => {
-    expect(SERVICE_DEFINITION_BY_ID.netflix.isMediaIdValid('abc123')).toBe(false);
-    expect(SERVICE_DEFINITION_BY_ID.youtube.isMediaIdValid('abc/123')).toBe(false);
+    expect(STREAMING_SERVICE_DEFINITION_BY_ID.netflix.isMediaIdValid('abc123')).toBe(false);
+    expect(STREAMING_SERVICE_DEFINITION_BY_ID.youtube.isMediaIdValid('abc/123')).toBe(false);
     expect(() =>
       createRoomState('ROOM04', {
         memberId: 'member-a',
         memberName: 'Member A',
-        serviceId: 'youtube',
+        streamingServiceId: 'youtube',
         initialPlayback: {
           mediaId: 'abc/123',
           title: 'Clip',
@@ -246,14 +262,14 @@ describe('room reducer', () => {
           playing: true,
         },
       }),
-    ).toThrow('Invalid media id for service.');
+    ).toThrow('Invalid media id for streaming service.');
   });
 
   it('updates the canonical watch url when playback media changes', () => {
     const room = createRoomState('ROOM05', {
       memberId: 'member-a',
       memberName: 'Member A',
-      serviceId: 'youtube',
+      streamingServiceId: 'youtube',
       initialPlayback: {
         mediaId: 'abc123',
         title: 'Clip',
@@ -265,7 +281,7 @@ describe('room reducer', () => {
     applyPlaybackUpdate(
       room,
       {
-        serviceId: 'youtube',
+        streamingServiceId: 'youtube',
         mediaId: 'next456',
         title: 'Clip 2',
         positionSec: 0,
@@ -282,7 +298,7 @@ describe('room reducer', () => {
     const room = createRoomState('ROOM06', {
       memberId: 'member-a',
       memberName: 'Member A',
-      serviceId: 'youtube',
+      streamingServiceId: 'youtube',
       initialPlayback: {
         mediaId: 'abc123',
         title: 'Clip',
@@ -302,7 +318,7 @@ describe('protocol schemas', () => {
     const payload = createRoomRequestSchema.parse({
       memberId: ' member-a ',
       memberName: ` ${'A'.repeat(MAX_MEMBER_NAME_LENGTH + 10)} \u0000`,
-      serviceId: 'youtube',
+      streamingServiceId: 'youtube',
       initialPlayback: {
         mediaId: ' abc123 ',
         title: `  ${'T'.repeat(MAX_TITLE_LENGTH + 20)}  `,
@@ -330,7 +346,7 @@ describe('protocol schemas', () => {
 
   it('rejects malformed playback updates', () => {
     const result = playbackUpdateRequestSchema.safeParse({
-      serviceId: 'youtube',
+      streamingServiceId: 'youtube',
       mediaId: 'abc123',
       playing: true,
       positionSec: Number.POSITIVE_INFINITY,
@@ -341,7 +357,7 @@ describe('protocol schemas', () => {
 
   it('rejects playback updates with oversized positions', () => {
     const result = playbackUpdateRequestSchema.safeParse({
-      serviceId: 'youtube',
+      streamingServiceId: 'youtube',
       mediaId: 'abc123',
       playing: true,
       positionSec: 1e308,
@@ -363,7 +379,7 @@ describe('protocol schemas', () => {
       {
         memberId: 'member-a',
         memberName: 'Member A',
-        serviceId: 'netflix',
+        streamingServiceId: 'netflix',
         initialPlayback: {
           mediaId: '123',
           title: 'Example',

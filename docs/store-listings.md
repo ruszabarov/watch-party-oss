@@ -19,13 +19,13 @@ with friends.
 ## Long Description
 
 Open Watch Party is a free, open source, lightweight browser extension for
-watch parties on your favorite services.
+watch parties on your favorite streaming services.
 
 Create a room, share the invite code with friends, and watch together while the
 extension keeps playback state in sync. When someone plays, pauses, or seeks,
 the room follows along in realtime.
 
-Current supported services:
+Current supported streaming services:
 
 - YouTube
 - Netflix
@@ -35,13 +35,13 @@ What you get:
 - Realtime playback sync for watch parties
 - Simple room creation and joining
 - Shareable invite codes
-- Support for current watch pages, with more services welcome
+- Support for current watch pages, with more streaming services welcome
 - Open source code and public development on GitHub
 - Self-hostable backend for people who want to run their own server
 
-Open Watch Party is intentionally small and focused. More services can be added
-over time, and contributions are welcome. If you want support for another
-streaming service, open an issue or pull request on GitHub:
+Open Watch Party is intentionally small and focused. More streaming services can
+be added over time, and contributions are welcome. If you want support for
+another streaming service, open an issue or pull request on GitHub:
 
 https://github.com/ruszabarov/open-watch-party
 
@@ -54,8 +54,8 @@ active supported watch page.
 
 The extension currently supports YouTube and Netflix only. It does not provide
 streaming content, bypass subscriptions, bypass DRM, or grant access to paid
-services. Each participant must have their own access to the service they are
-watching.
+streaming services. Each participant must have their own access to the streaming
+service they are watching.
 
 ## Suggested Category
 

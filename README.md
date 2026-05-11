@@ -4,8 +4,8 @@ Open Watch Party is an open source, lightweight, and free browser extension for
 watch parties on your favorite streaming services.
 
 Create a room, share the invite code with friends, and keep playback in sync
-while everyone watches from their own browser. Contributions for more services
-are welcome.
+while everyone watches from their own browser. Contributions for more streaming
+services are welcome.
 
 Repository: https://github.com/ruszabarov/open-watch-party
 
@@ -18,16 +18,16 @@ Repository: https://github.com/ruszabarov/open-watch-party
 - Built for supported watch pages
 - Self-hostable Socket.IO backend
 
-## Supported Services
+## Supported Streaming Services
 
-| Service | Watch URL pattern                                                                          |
-| ------- | ------------------------------------------------------------------------------------------ |
-| Netflix | `netflix.com/watch/...`                                                                    |
-| YouTube | `youtube.com/watch?v=...`, `youtu.be/...`, `youtube.com/embed/...`, `youtube.com/live/...` |
+| Streaming service | Watch URL pattern                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| Netflix           | `netflix.com/watch/...`                                                                    |
+| YouTube           | `youtube.com/watch?v=...`, `youtu.be/...`, `youtube.com/embed/...`, `youtube.com/live/...` |
 
-Want another service? Please open an issue or pull request with the service you
-want to add. Adding support usually requires shared service metadata plus an
-extension-side player integration.
+Want another streaming service? Please open an issue or pull request with the
+streaming service you want to add. Adding support usually requires shared
+streaming service metadata plus an extension-side player integration.
 
 ## Project Structure
 
@@ -88,19 +88,19 @@ Copy [apps/extension/.env.example](apps/extension/.env.example) to
 
 - `SERVER_URL`: default backend URL used by the extension
 
-## Adding A Service
+## Adding A Streaming Service
 
-Adding a service starts in `packages/shared/src/services.ts`, which owns the
-service ID, display metadata, URL parsing, canonical watch URL builder, and
-extension match patterns.
+Adding a streaming service starts in `packages/shared/src/streaming-services.ts`,
+which owns the streaming service ID, display metadata, URL parsing, canonical
+watch URL builder, and extension match patterns.
 
 Then add the extension-only DOM integration under
-`apps/extension/src/services/<id>.ts`, add a one-line
-`runServiceContentScript(MY_SERVICE)` entrypoint, and register the plugin in
-`SERVICE_PLUGIN_BY_ID`.
+`apps/extension/src/streaming-services/<id>.ts`, add a one-line
+`runStreamingServiceContentScript(MY_STREAMING_SERVICE)` entrypoint, and
+register the integration in `STREAMING_SERVICE_INTEGRATION_BY_ID`.
 
-Issues and pull requests for new services, bug fixes, documentation, and store
-listing improvements are welcome.
+Issues and pull requests for new streaming services, bug fixes, documentation,
+and store listing improvements are welcome.
 
 ## Backend Notes
 

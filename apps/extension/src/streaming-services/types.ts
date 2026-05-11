@@ -1,4 +1,4 @@
-import type { PartySnapshot, ServiceDefinition } from '@open-watch-party/shared';
+import type { PartySnapshot, StreamingServiceDefinition } from '@open-watch-party/shared';
 import type { ApplySnapshotResult } from '../messaging';
 
 export type PlaybackStatus = { syncable: true } | { syncable: false; reason: string };
@@ -9,9 +9,9 @@ export interface PlaybackApplyContext {
 }
 
 /**
- * Service integration plus the extension-only DOM hooks needed by a content script.
+ * Streaming service integration plus the extension-only DOM hooks needed by a content script.
  */
-export type ServicePlugin = ServiceDefinition & {
+export type StreamingServiceIntegration = StreamingServiceDefinition & {
   /** Shown when a watch URL matched but the `<video>` element isn't ready. */
   readonly playerNotReadyMessage: string;
   getVideo(): HTMLVideoElement | null;

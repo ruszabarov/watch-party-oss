@@ -1,10 +1,10 @@
-import { SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
+import { STREAMING_SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
 import type { ApplySnapshotResult } from '../messaging';
 import { applyNetflixPlayerSnapshot } from './netflix-player-bridge';
-import type { PlaybackApplyContext, ServicePlugin } from './types';
+import type { PlaybackApplyContext, StreamingServiceIntegration } from './types';
 
 const NETFLIX_TITLE_SUFFIX = /\s*-\s*Netflix$/i;
-const NETFLIX_DEFINITION = SERVICE_DEFINITION_BY_ID.netflix;
+const NETFLIX_STREAMING_SERVICE_DEFINITION = STREAMING_SERVICE_DEFINITION_BY_ID.netflix;
 const NETFLIX_SEEK_THRESHOLD_SEC = 5;
 
 function applyNetflixPlayerPlayback(playing: boolean, positionSec?: number) {
@@ -28,8 +28,8 @@ async function applyNetflixPlayback({
   return applyNetflixPlayerPlayback(playing);
 }
 
-export const NETFLIX_SERVICE: ServicePlugin = {
-  ...NETFLIX_DEFINITION,
+export const NETFLIX_STREAMING_SERVICE: StreamingServiceIntegration = {
+  ...NETFLIX_STREAMING_SERVICE_DEFINITION,
   playerNotReadyMessage: 'Netflix player is still loading.',
   getVideo: () => document.querySelector<HTMLVideoElement>('video'),
   getMediaTitle: () => document.title.replace(NETFLIX_TITLE_SUFFIX, '').trim() || 'Netflix',

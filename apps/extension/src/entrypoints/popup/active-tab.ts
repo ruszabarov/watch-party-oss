@@ -1,6 +1,6 @@
 import { browser, type Browser } from 'wxt/browser';
-import type { ServiceId } from '@open-watch-party/shared';
-import { findServiceByUrl } from '../../services/catalog';
+import type { StreamingServiceId } from '@open-watch-party/shared';
+import { findStreamingServiceByUrl } from '../../streaming-services/catalog';
 import { assertNotUndefined } from '../../utils/assertions';
 
 type BrowserTab = Browser.tabs.Tab;
@@ -8,7 +8,7 @@ type BrowserTab = Browser.tabs.Tab;
 export interface ActiveTabSummary {
   tabId: number;
   title: string;
-  activeServiceId: ServiceId | null;
+  activeStreamingServiceId: StreamingServiceId | null;
   isWatchPage: boolean;
 }
 
@@ -28,12 +28,12 @@ export async function queryActiveTabSummary(): Promise<ActiveTabSummary> {
 
 function summarizeActiveTab(tab: BrowserTab): ActiveTabSummary {
   const tabId = assertNotUndefined(tab.id);
-  const classification = tab.url ? findServiceByUrl(tab.url) : null;
+  const classification = tab.url ? findStreamingServiceByUrl(tab.url) : null;
 
   return {
     tabId,
     title: tab.title ?? '',
-    activeServiceId: classification?.serviceId ?? null,
+    activeStreamingServiceId: classification?.streamingServiceId ?? null,
     isWatchPage: classification?.isWatchPage ?? false,
   };
 }

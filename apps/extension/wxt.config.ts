@@ -1,6 +1,6 @@
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
-import { SUPPORTED_SERVICE_CONTENT_MATCHES } from '@open-watch-party/shared';
+import { SUPPORTED_STREAMING_SERVICE_CONTENT_MATCHES } from '@open-watch-party/shared';
 
 const LOCAL_SERVER_URL = 'http://localhost:8787';
 
@@ -20,7 +20,7 @@ const connectSrc = [
   'wss://*',
 ];
 
-const hostPermissions = [...SUPPORTED_SERVICE_CONTENT_MATCHES];
+const hostPermissions = [...SUPPORTED_STREAMING_SERVICE_CONTENT_MATCHES];
 
 export default defineConfig({
   srcDir: 'src',

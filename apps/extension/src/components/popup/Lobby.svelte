@@ -3,8 +3,8 @@
   import { Input } from "~/components/ui/input/index.js";
   import { Label } from "~/components/ui/label/index.js";
   import type { ActiveTabSummary } from '~/entrypoints/popup/active-tab.js';
-  import { getServiceDescriptor } from "~/services/catalog.js";
-  import ServiceBadge from "./ServiceBadge.svelte";
+  import { getStreamingServiceDescriptor } from "~/streaming-services/catalog.js";
+  import StreamingServiceBadge from "./StreamingServiceBadge.svelte";
 
   interface Props {
     activeTab: ActiveTabSummary;
@@ -18,7 +18,7 @@
   let joinCode = $state("");
 
   const activeDescriptor = $derived(
-    getServiceDescriptor(activeTab.activeServiceId),
+    getStreamingServiceDescriptor(activeTab.activeStreamingServiceId),
   );
 
   const isReady = $derived(activeTab.isWatchPage);
@@ -50,7 +50,7 @@
 <section class="flex flex-col gap-3">
   <div class="flex items-center gap-3">
     {#if activeDescriptor}
-      <ServiceBadge serviceId={activeTab.activeServiceId} />
+      <StreamingServiceBadge streamingServiceId={activeTab.activeStreamingServiceId} />
     {/if}
     <div class="min-w-0 space-y-1">
       <p class="m-0 text-sm font-semibold leading-5">

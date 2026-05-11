@@ -1,12 +1,12 @@
 import { createStore } from '@xstate/store';
 import type { PartySnapshot } from '@open-watch-party/shared';
-import type { ServiceId } from '@open-watch-party/shared';
+import type { StreamingServiceId } from '@open-watch-party/shared';
 import type { WatchPageContext } from '../messaging';
 
 export type SessionInfo = {
   readonly roomCode: string;
   readonly memberId: string;
-  readonly serviceId: ServiceId;
+  readonly streamingServiceId: StreamingServiceId;
 };
 
 export type BackgroundState = {
@@ -40,7 +40,7 @@ function updateSessionRoom(state: BackgroundState, room: PartySnapshot): Backgro
     session: {
       ...state.session,
       roomCode: room.roomCode,
-      serviceId: room.serviceId,
+      streamingServiceId: room.streamingServiceId,
     },
     room,
     lastWarning: null,

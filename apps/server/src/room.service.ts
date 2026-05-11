@@ -152,8 +152,8 @@ export class RoomService {
       return failure('Member is not part of this room.');
     }
 
-    if (payload.serviceId !== room.serviceId) {
-      return failure('Service mismatch.');
+    if (payload.streamingServiceId !== room.streamingServiceId) {
+      return failure('Streaming service mismatch.');
     }
 
     const playback = applyPlaybackUpdate(room, payload, memberId);

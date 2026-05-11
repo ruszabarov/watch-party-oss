@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import type { PartySnapshot, PlaybackUpdate } from '@open-watch-party/shared';
 import type { ApplySnapshotResult, WatchPageContext } from '../messaging';
 import { sendMessage } from '../messaging';
-import { getPlugin } from '../services/plugins';
+import { getStreamingServiceIntegration } from '../streaming-services/integrations';
 import type { BackgroundState, BackgroundStore } from './state';
 
 interface ControllableWatchTabState {
@@ -10,8 +10,11 @@ interface ControllableWatchTabState {
   playback: PlaybackUpdate;
 }
 
-function isPluginUrl(plugin: { matchesUrl(url: URL): boolean }, rawUrl: string): boolean {
-  return URL.canParse(rawUrl) && plugin.matchesUrl(new URL(rawUrl));
+function isStreamingServiceUrl(
+  integration: { matchesUrl(url: URL): boolean },
+  rawUrl: string,
+): boolean {
+  return URL.canParse(rawUrl) && integration.matchesUrl(new URL(rawUrl));
 }
 
 function roomMatchesContext(
@@ -20,7 +23,7 @@ function roomMatchesContext(
 ): room is PartySnapshot {
   return (
     room !== undefined &&
-    room.serviceId === context.serviceId &&
+    room.streamingServiceId === context.streamingServiceId &&
     room.playback.mediaId === context.mediaId
   );
 }
@@ -37,10 +40,12 @@ export class ControlledTabService {
       const controlledTab = this.state.controlledTab;
       if (tabId === controlledTab?.tabId && tab.url) {
         const session = this.state.session;
-        const sessionPlugin = session ? getPlugin(session.serviceId) : null;
-        if (sessionPlugin && !isPluginUrl(sessionPlugin, tab.url)) {
+        const sessionStreamingService = session
+          ? getStreamingServiceIntegration(session.streamingServiceId)
+          : null;
+        if (sessionStreamingService && !isStreamingServiceUrl(sessionStreamingService, tab.url)) {
           this.store.trigger.setLastWarning({
-            message: `The controlled tab left ${sessionPlugin.descriptor.label}.`,
+            message: `The controlled tab left ${sessionStreamingService.descriptor.label}.`,
           });
         }
       }
@@ -70,7 +75,7 @@ export class ControlledTabService {
     }
 
     const shouldRequestMediaSwitch =
-      context.serviceId === room.serviceId &&
+      context.streamingServiceId === room.streamingServiceId &&
       controlledTab.context.mediaId !== context.mediaId &&
       room.playback.mediaId !== context.mediaId;
 
@@ -93,10 +98,12 @@ export class ControlledTabService {
     }
 
     const session = this.state.session;
-    const sessionPlugin = session ? getPlugin(session.serviceId) : null;
+    const sessionStreamingService = session
+      ? getStreamingServiceIntegration(session.streamingServiceId)
+      : null;
 
     if (
-      controlledTab.context.serviceId !== room.serviceId ||
+      controlledTab.context.streamingServiceId !== room.streamingServiceId ||
       controlledTab.context.mediaId !== room.playback.mediaId
     ) {
       await this.navigateControlledTabToRoom(controlledTab.tabId, room.watchUrl, false);
@@ -107,8 +114,8 @@ export class ControlledTabService {
 
     if (!result) {
       this.store.trigger.setLastWarning({
-        message: sessionPlugin
-          ? `${sessionPlugin.descriptor.label} tab is not ready for sync yet.`
+        message: sessionStreamingService
+          ? `${sessionStreamingService.descriptor.label} tab is not ready for sync yet.`
           : 'Controlled tab is not ready for sync yet.',
       });
       return;
@@ -145,15 +152,15 @@ export class ControlledTabService {
       throw new Error('Open a supported watch page before starting a party.');
     }
 
-    const plugin = getPlugin(context.serviceId);
-    if (!plugin) {
+    const integration = getStreamingServiceIntegration(context.streamingServiceId);
+    if (!integration) {
       throw new Error('This tab is not on a supported streaming service.');
     }
 
     const playback = await this.requestPlaybackFromTab(tabId);
 
     if (!playback || playback.mediaId !== context.mediaId) {
-      throw new Error(`${plugin.descriptor.label} playback state is not ready yet.`);
+      throw new Error(`${integration.descriptor.label} playback state is not ready yet.`);
     }
 
     return { context, playback };

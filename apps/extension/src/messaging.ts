@@ -1,10 +1,10 @@
 import { defineExtensionMessaging } from '@webext-core/messaging';
 
-import type { PartySnapshot, PlaybackUpdate, ServiceId } from '@open-watch-party/shared';
+import type { PartySnapshot, PlaybackUpdate, StreamingServiceId } from '@open-watch-party/shared';
 import type { BackgroundState } from './background/state';
 
 export interface WatchPageContext {
-  serviceId: ServiceId;
+  streamingServiceId: StreamingServiceId;
   mediaId: string;
   title?: string;
 }

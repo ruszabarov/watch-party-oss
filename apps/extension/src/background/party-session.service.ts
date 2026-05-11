@@ -13,7 +13,7 @@ import type {
 import { getErrorMessage } from '~/utils/errors.js';
 import { getSettings } from '../storage/settings';
 import type { WatchPageContext } from '../messaging';
-import { RealtimeConnection } from './realtime-connection';
+import { RealtimeConnection } from './connection.service';
 import type { BackgroundState, BackgroundStore } from './state';
 
 const ACTIVE_ROOM_EXISTS_ERROR = 'Leave your current room before joining or creating another room.';
@@ -47,13 +47,13 @@ export class PartySessionService {
   ): Promise<void> {
     this.assertNoActiveSession();
 
-    const { serviceId: _playbackServiceId, ...initialPlayback } = playback;
+    const { streamingServiceId: _playbackStreamingServiceId, ...initialPlayback } = playback;
     const settings = await getSettings();
 
     const response = await this.emitRoomCreate({
       memberId: this.ensureMemberId(),
       memberName: settings.memberName,
-      serviceId: context.serviceId,
+      streamingServiceId: context.streamingServiceId,
       initialPlayback,
     });
 
@@ -96,7 +96,8 @@ export class PartySessionService {
     const playbackContext = this.state.controlledTab?.context ?? null;
     if (
       playbackContext &&
-      (playbackContext.serviceId !== update.serviceId || playbackContext.mediaId !== update.mediaId)
+      (playbackContext.streamingServiceId !== update.streamingServiceId ||
+        playbackContext.mediaId !== update.mediaId)
     ) {
       this.store.trigger.setLastWarning({
         message: 'Local media no longer matches the active room.',
@@ -189,9 +190,9 @@ export class PartySessionService {
       return;
     }
 
-    if (context.serviceId !== session.serviceId) {
+    if (context.streamingServiceId !== session.streamingServiceId) {
       this.store.trigger.setLastWarning({
-        message: 'Rooms can only switch media within the original service.',
+        message: 'Rooms can only switch media within the original streaming service.',
       });
       return;
     }
@@ -201,7 +202,7 @@ export class PartySessionService {
     }
 
     await this.sendPlaybackUpdate({
-      serviceId: context.serviceId,
+      streamingServiceId: context.streamingServiceId,
       mediaId: context.mediaId,
       title: context.title ?? '',
       positionSec: 0,
@@ -216,7 +217,7 @@ export class PartySessionService {
     const nextSession = {
       roomCode: response.snapshot.roomCode,
       memberId: response.memberId,
-      serviceId: response.snapshot.serviceId,
+      streamingServiceId: response.snapshot.streamingServiceId,
     };
     this.store.trigger.setJoinedSession({
       session: nextSession,

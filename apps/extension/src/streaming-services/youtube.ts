@@ -1,8 +1,8 @@
-import { SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
-import type { PlaybackStatus, ServicePlugin } from './types';
+import { STREAMING_SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
+import type { PlaybackStatus, StreamingServiceIntegration } from './types';
 
 const YOUTUBE_TITLE_SUFFIX = /\s*-\s*YouTube$/i;
-const YOUTUBE_DEFINITION = SERVICE_DEFINITION_BY_ID.youtube;
+const YOUTUBE_STREAMING_SERVICE_DEFINITION = STREAMING_SERVICE_DEFINITION_BY_ID.youtube;
 const YOUTUBE_AD_REASON = 'YouTube is showing an ad. Sync will resume when the video returns.';
 const YOUTUBE_AD_CLASS_NAMES = new Set(['ad-showing', 'ad-interrupting']);
 
@@ -28,8 +28,8 @@ function getYoutubePlaybackStatus(video: HTMLVideoElement): PlaybackStatus {
   return { syncable: true };
 }
 
-export const YOUTUBE_SERVICE: ServicePlugin = {
-  ...YOUTUBE_DEFINITION,
+export const YOUTUBE_STREAMING_SERVICE: StreamingServiceIntegration = {
+  ...YOUTUBE_STREAMING_SERVICE_DEFINITION,
   playerNotReadyMessage: 'YouTube player is still loading.',
   getVideo: () =>
     document.querySelector<HTMLVideoElement>('#movie_player video, video.html5-main-video, video'),

@@ -60,22 +60,22 @@ class FakeSocket {
 }
 
 const validPlaybackUpdatePayload = {
-  serviceId: 'youtube',
+  streamingServiceId: 'youtube',
   mediaId: 'abc123',
   title: 'Clip',
   playing: false,
   positionSec: 15,
 };
 
-function createServiceContext() {
+function createSocketServiceContext() {
   const io = new FakeIo();
-  const service = new RealtimeSocketService(io as never);
-  return { io, service };
+  const socketService = new RealtimeSocketService(io as never);
+  return { io, socketService };
 }
 
-function connectSocket(service: RealtimeSocketService, socketId: string): FakeSocket {
+function connectSocket(socketService: RealtimeSocketService, socketId: string): FakeSocket {
   const socket = new FakeSocket(socketId);
-  service.handleConnection(socket as never);
+  socketService.handleConnection(socket as never);
   return socket;
 }
 
@@ -94,7 +94,7 @@ function createRoom(
   overrides: Partial<{
     memberId: string;
     memberName: string;
-    serviceId: string;
+    streamingServiceId: string;
     title: string;
   }> = {},
 ): RoomResponse {
@@ -105,7 +105,7 @@ function createRoom(
     {
       memberId: overrides.memberId ?? 'member-a',
       memberName: overrides.memberName ?? 'Member A',
-      serviceId: overrides.serviceId ?? 'youtube',
+      streamingServiceId: overrides.streamingServiceId ?? 'youtube',
       initialPlayback: {
         mediaId: 'abc123',
         title: overrides.title ?? 'Clip',
@@ -162,8 +162,8 @@ afterEach(() => {
 
 describe('socket handlers', () => {
   it('sanitizes valid room creation payloads before storing and broadcasting', () => {
-    const { io, service } = createServiceContext();
-    const socket = connectSocket(service, 'socket-1');
+    const { io, socketService } = createSocketServiceContext();
+    const socket = connectSocket(socketService, 'socket-1');
     const roomCreateHandler = getHandler<RoomResponse>(socket, 'room:create');
 
     let response: OperationResult<RoomResponse> | null = null;
@@ -171,7 +171,7 @@ describe('socket handlers', () => {
       {
         memberId: ' member-a ',
         memberName: '\n  Host\u0000  ',
-        serviceId: 'youtube',
+        streamingServiceId: 'youtube',
         initialPlayback: {
           mediaId: ' abc123 ',
           title: ` ${'T'.repeat(MAX_TITLE_LENGTH + 20)} `,
@@ -191,7 +191,7 @@ describe('socket handlers', () => {
         snapshot: {
           members: [{ id: 'member-a', name: 'Host' }],
           playback: {
-            serviceId: 'youtube',
+            streamingServiceId: 'youtube',
             title: 'T'.repeat(MAX_TITLE_LENGTH),
           },
         },
@@ -203,9 +203,9 @@ describe('socket handlers', () => {
     expect(socket.emitted[0]?.event).toBe('room:state');
   });
 
-  it('acknowledges service-specific media validation failures during room creation', () => {
-    const { io, service } = createServiceContext();
-    const socket = connectSocket(service, 'socket-1');
+  it('acknowledges streaming-service-specific media validation failures during room creation', () => {
+    const { io, socketService } = createSocketServiceContext();
+    const socket = connectSocket(socketService, 'socket-1');
     const roomCreateHandler = getHandler<RoomResponse>(socket, 'room:create');
 
     let response: OperationResult<RoomResponse> | null = null;
@@ -214,7 +214,7 @@ describe('socket handlers', () => {
         {
           memberId: 'member-a',
           memberName: 'Member A',
-          serviceId: 'netflix',
+          streamingServiceId: 'netflix',
           initialPlayback: {
             mediaId: 'not-a-netflix-id',
             title: 'Clip',
@@ -230,7 +230,7 @@ describe('socket handlers', () => {
 
     expect(response).toEqual({
       ok: false,
-      error: 'Invalid media id for service.',
+      error: 'Invalid media id for streaming service.',
     });
     expect(socket.joinedRooms).toHaveLength(0);
     expect(io.emitted).toHaveLength(0);
@@ -238,8 +238,8 @@ describe('socket handlers', () => {
   });
 
   it('rejects invalid playback payloads without broadcasting playback state', () => {
-    const { io, service } = createServiceContext();
-    const socket = connectSocket(service, 'socket-1');
+    const { io, socketService } = createSocketServiceContext();
+    const socket = connectSocket(socketService, 'socket-1');
     createRoom(socket);
 
     let response: OperationResult<unknown> | null = null;
@@ -252,9 +252,9 @@ describe('socket handlers', () => {
     expect(socket.emitted).toHaveLength(0);
   });
 
-  it('acknowledges service-specific media validation failures during playback updates', () => {
-    const { io, service } = createServiceContext();
-    const socket = connectSocket(service, 'socket-1');
+  it('acknowledges streaming-service-specific media validation failures during playback updates', () => {
+    const { io, socketService } = createSocketServiceContext();
+    const socket = connectSocket(socketService, 'socket-1');
     createRoom(socket);
 
     let response: OperationResult<unknown> | null = null;
@@ -272,16 +272,16 @@ describe('socket handlers', () => {
 
     expect(response).toEqual({
       ok: false,
-      error: 'Invalid media id for service.',
+      error: 'Invalid media id for streaming service.',
     });
     expect(io.emitted).toHaveLength(0);
     expect(socket.emitted).toHaveLength(0);
   });
 
-  it('broadcasts playback state when a member switches to same-service media', () => {
-    const { service } = createServiceContext();
-    const hostSocket = connectSocket(service, 'socket-host');
-    const guestSocket = connectSocket(service, 'socket-guest');
+  it('broadcasts playback state when a member switches to same streaming service media', () => {
+    const { socketService } = createSocketServiceContext();
+    const hostSocket = connectSocket(socketService, 'socket-host');
+    const guestSocket = connectSocket(socketService, 'socket-guest');
     const room = createRoom(hostSocket);
     expect(joinRoom(guestSocket, room.snapshot.roomCode)).toMatchObject({ ok: true });
     hostSocket.emitted.length = 0;
@@ -305,7 +305,7 @@ describe('socket handlers', () => {
       data: {
         watchUrl: 'https://www.youtube.com/watch?v=next456',
         playback: {
-          serviceId: 'youtube',
+          streamingServiceId: 'youtube',
           mediaId: 'next456',
           title: 'Next clip',
           positionSec: 0,
@@ -326,16 +326,16 @@ describe('socket handlers', () => {
     });
   });
 
-  it('rejects playback updates that switch the room service', () => {
-    const { io, service } = createServiceContext();
-    const socket = connectSocket(service, 'socket-1');
+  it('rejects playback updates that switch the room streaming service', () => {
+    const { io, socketService } = createSocketServiceContext();
+    const socket = connectSocket(socketService, 'socket-1');
     createRoom(socket);
 
     let response: OperationResult<unknown> | null = null;
     getHandler<unknown>(socket, 'playback:update')(
       {
         ...validPlaybackUpdatePayload,
-        serviceId: 'netflix',
+        streamingServiceId: 'netflix',
         mediaId: '123456',
       },
       (value) => {
@@ -345,15 +345,15 @@ describe('socket handlers', () => {
 
     expect(response).toEqual({
       ok: false,
-      error: 'Service mismatch.',
+      error: 'Streaming service mismatch.',
     });
     expect(io.emitted).toHaveLength(0);
     expect(socket.emitted).toHaveLength(0);
   });
 
   it('rejects playback updates without a bound socket session', () => {
-    const { service } = createServiceContext();
-    const socket = connectSocket(service, 'socket-1');
+    const { socketService } = createSocketServiceContext();
+    const socket = connectSocket(socketService, 'socket-1');
 
     let response: OperationResult<unknown> | null = null;
     getHandler<unknown>(socket, 'playback:update')(validPlaybackUpdatePayload, (value) => {
@@ -370,8 +370,8 @@ describe('socket handlers', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
 
-    const { service } = createServiceContext();
-    const socket = connectSocket(service, 'socket-1');
+    const { socketService } = createSocketServiceContext();
+    const socket = connectSocket(socketService, 'socket-1');
     createRoom(socket);
     const playbackUpdateHandler = getHandler<unknown>(socket, 'playback:update');
 
@@ -401,9 +401,9 @@ describe('socket handlers', () => {
   });
 
   it('removes only the bound member on room leave', () => {
-    const { io, service } = createServiceContext();
-    const hostSocket = connectSocket(service, 'socket-host');
-    const guestSocket = connectSocket(service, 'socket-guest');
+    const { io, socketService } = createSocketServiceContext();
+    const hostSocket = connectSocket(socketService, 'socket-host');
+    const guestSocket = connectSocket(socketService, 'socket-guest');
     const room = createRoom(hostSocket);
     expect(joinRoom(guestSocket, room.snapshot.roomCode)).toMatchObject({ ok: true });
 
@@ -427,9 +427,9 @@ describe('socket handlers', () => {
   });
 
   it('broadcasts room state when a bound socket disconnects', () => {
-    const { io, service } = createServiceContext();
-    const hostSocket = connectSocket(service, 'socket-host');
-    const guestSocket = connectSocket(service, 'socket-guest');
+    const { io, socketService } = createSocketServiceContext();
+    const hostSocket = connectSocket(socketService, 'socket-host');
+    const guestSocket = connectSocket(socketService, 'socket-guest');
     const room = createRoom(hostSocket);
     expect(joinRoom(guestSocket, room.snapshot.roomCode)).toMatchObject({ ok: true });
 
@@ -448,9 +448,9 @@ describe('socket handlers', () => {
   });
 
   it('disconnects the prior socket when the same member reconnects', () => {
-    const { service, io } = createServiceContext();
-    const priorSocket = connectSocket(service, 'socket-old');
-    const nextSocket = connectSocket(service, 'socket-new');
+    const { socketService, io } = createSocketServiceContext();
+    const priorSocket = connectSocket(socketService, 'socket-old');
+    const nextSocket = connectSocket(socketService, 'socket-new');
     const room = createRoom(priorSocket);
     io.sockets.sockets.set(priorSocket.id, priorSocket);
 
@@ -464,9 +464,9 @@ describe('socket handlers', () => {
   });
 
   it('rejects room join while the same member is active in another room', () => {
-    const { service } = createServiceContext();
-    const firstSocket = connectSocket(service, 'socket-1');
-    const secondSocket = connectSocket(service, 'socket-2');
+    const { socketService } = createSocketServiceContext();
+    const firstSocket = connectSocket(socketService, 'socket-1');
+    const secondSocket = connectSocket(socketService, 'socket-2');
     const firstRoom = createRoom(firstSocket);
     const secondRoom = createRoom(secondSocket, {
       memberId: 'member-b',

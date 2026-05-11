@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { isServiceId, type ServiceId } from './services';
-export type { ServiceId } from './services';
+import { isStreamingServiceId, type StreamingServiceId } from './streaming-services';
+export type { StreamingServiceId } from './streaming-services';
 
 export const MAX_MEMBER_NAME_LENGTH = 64;
 export const MAX_TITLE_LENGTH = 256;
@@ -15,7 +15,7 @@ export interface PartyMember {
 }
 
 export interface PlaybackState {
-  serviceId: ServiceId;
+  streamingServiceId: StreamingServiceId;
   mediaId: string;
   title?: string;
   playing: boolean;
@@ -27,7 +27,7 @@ export interface PlaybackState {
 
 export interface PartySnapshot {
   roomCode: string;
-  serviceId: ServiceId;
+  streamingServiceId: StreamingServiceId;
   watchUrl: string;
   members: PartyMember[];
   playback: PlaybackState;
@@ -63,9 +63,9 @@ const roomCodeSchema = z
   .pipe(z.string().min(1));
 const memberIdSchema = z.string().trim().min(1);
 const mediaIdSchema = z.string().trim().min(1);
-const serviceIdSchema = z.custom<ServiceId>(
-  (value) => typeof value === 'string' && isServiceId(value),
-  { message: 'Unsupported service id' },
+const streamingServiceIdSchema = z.custom<StreamingServiceId>(
+  (value) => typeof value === 'string' && isStreamingServiceId(value),
+  { message: 'Unsupported streaming service id' },
 );
 const positionSchema = z.number().min(0).max(MAX_PLAYBACK_POSITION_SEC);
 const memberNameSchema = z.string().transform(sanitizeMemberName);
@@ -75,19 +75,19 @@ const titleSchema = z
   .transform((value) => sanitizeOptionalTitle(value));
 
 export const playbackDraftSchema = z.object({
-  serviceId: serviceIdSchema,
+  streamingServiceId: streamingServiceIdSchema,
   mediaId: mediaIdSchema,
   title: titleSchema,
   positionSec: positionSchema,
   playing: z.boolean(),
 });
 
-export const playbackStateInputSchema = playbackDraftSchema.omit({ serviceId: true });
+export const playbackStateInputSchema = playbackDraftSchema.omit({ streamingServiceId: true });
 
 export const createRoomRequestSchema = z.object({
   memberId: memberIdSchema,
   memberName: memberNameSchema,
-  serviceId: serviceIdSchema,
+  streamingServiceId: streamingServiceIdSchema,
   initialPlayback: playbackStateInputSchema,
 });
 
