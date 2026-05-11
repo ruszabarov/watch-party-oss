@@ -1,174 +1,53 @@
 <script lang="ts">
-  import {
-    backgroundStateItem,
-    createBackgroundState,
-    selectRoom,
-    selectSession,
-    type BackgroundState,
-  } from '../../utils/background/state';
-  import { sendMessage } from '../../utils/protocol/messaging';
-  import {
-    createEmptyActiveTabSummary,
-    queryActiveTabSummary,
-  } from '$lib/active-tab.js';
-  import { getErrorMessage } from '$lib/errors.js';
+    import { onMount } from "svelte";
+    import {
+        backgroundStateItem,
+        type BackgroundState,
+    } from "../../utils/background/state";
+    import {
+        queryActiveTabSummary,
+        type ActiveTabSummary,
+    } from "$lib/active-tab.js";
+    import { getErrorMessage } from "$lib/errors.js";
+    import Notice from "$lib/components/popup/Notice.svelte";
+    import PopupContent from "./PopupContent.svelte";
 
-  import Header from '$lib/components/popup/Header.svelte';
-  import Lobby from '$lib/components/popup/Lobby.svelte';
-  import Room from '$lib/components/popup/Room.svelte';
-  import Settings from '$lib/components/popup/Settings.svelte';
-  import Notice from '$lib/components/popup/Notice.svelte';
-  import { Button } from '$lib/components/ui/button/index.js';
-  import { Card, CardContent } from '$lib/components/ui/card/index.js';
+    let backgroundState: BackgroundState | undefined = $state();
+    let activeTab: ActiveTabSummary | undefined = $state();
+    let activeTabError: string | null = $state(null);
 
-  let popup: BackgroundState = $state(createBackgroundState());
-  let activeTab = $state(createEmptyActiveTabSummary());
-  let isBusy = $state(false);
-  let settingsOpen = $state(false);
-
-  const room = $derived(selectRoom(popup));
-  const session = $derived(selectSession(popup));
-  const isActiveRoomOnCurrentTab = $derived(
-    popup.controlledTab != null &&
-      activeTab.tabId != null &&
-      popup.controlledTab.tabId === activeTab.tabId,
-  );
-  const leaveFirstMessage =
-    'This tab is not controlling your active room. Leave it before starting or joining a room here.';
-
-  function setLastError(error: unknown): void {
-    popup = { ...popup, lastError: getErrorMessage(error, 'Unexpected popup error.') };
-  }
-
-  async function perform(action: () => Promise<void>): Promise<void> {
-    isBusy = true;
-    try {
-      await action();
-    } catch (error) {
-      setLastError(error);
-    } finally {
-      isBusy = false;
-    }
-  }
-
-  function requireActiveTabId(): number {
-    if (activeTab.tabId == null) {
-      throw new Error('Open a browser tab before continuing.');
-    }
-
-    return activeTab.tabId;
-  }
-
-  function handleCreateRoom(): void {
-    void perform(() => sendMessage('popup:create-room', { tabId: requireActiveTabId() }));
-  }
-
-  function handleJoinRoom(roomCode: string): void {
-    void perform(() => sendMessage('popup:join-room', { roomCode, tabId: requireActiveTabId() }));
-  }
-
-  function handleLeaveRoom(): void {
-    void perform(() => sendMessage('popup:leave-room', undefined));
-  }
-
-  function handleSaveSettings(next: BackgroundState['settings']): void {
-    void perform(() => sendMessage('popup:update-settings', next)).then(closeSettings);
-  }
-
-  function dismissError(): void {
-    popup = { ...popup, lastError: null };
-  }
-
-  function dismissWarning(): void {
-    popup = { ...popup, lastWarning: null };
-  }
-
-  function toggleSettings(): void {
-    settingsOpen = !settingsOpen;
-  }
-
-  function closeSettings(): void {
-    settingsOpen = false;
-  }
-
-  $effect(() => {
-    backgroundStateItem.getValue().then((v) => { popup = v; });
-    queryActiveTabSummary().then((v) => { activeTab = v; }).catch(setLastError);
-
-    const unwatch = backgroundStateItem.watch((newValue) => {
-      popup = newValue;
+    onMount(() => {
+        queryActiveTabSummary()
+            .then((summary) => {
+                activeTab = summary;
+            })
+            .catch((error) => {
+                activeTabError = getErrorMessage(
+                    error,
+                    "Could not read the active tab.",
+                );
+            });
     });
 
-    return () => unwatch();
-  });
+    onMount(() => {
+        const unwatch = backgroundStateItem.watch((newValue) => {
+            backgroundState = newValue;
+        });
+
+        backgroundStateItem.getValue().then((value) => {
+            backgroundState = value;
+        });
+
+        return () => unwatch();
+    });
 </script>
 
-<div class="flex w-[360px] flex-col overflow-hidden bg-muted/40 text-foreground">
-  <Header settingsOpen={settingsOpen} onToggleSettings={toggleSettings} />
-
-  <main class="p-3">
-    {#if settingsOpen}
-      <div class="flex flex-col gap-3">
-        <Settings
-          settings={popup.settings}
-          {isBusy}
-          onSave={handleSaveSettings}
-        />
-      </div>
-    {:else}
-      <div class="flex flex-col gap-3">
-        {#if room}
-          <Room
-            popup={popup}
-            {isBusy}
-            onLeave={handleLeaveRoom}
-          />
-          {#if !isActiveRoomOnCurrentTab}
-            <Notice kind="warning" message={leaveFirstMessage} />
-          {/if}
-        {:else if session}
-          <section class="flex flex-col gap-3">
-            <Card size="sm">
-              <CardContent class="flex flex-col gap-3">
-                <div class="space-y-1">
-                  <p class="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Active room
-                  </p>
-                  <p class="m-0 text-sm font-semibold text-foreground">
-                    Reconnecting to room {session.roomCode}
-                  </p>
-                  <p class="m-0 text-sm leading-5 text-muted-foreground">
-                    {leaveFirstMessage}
-                  </p>
-                </div>
-                <Button
-                  variant="destructive"
-                  class="font-semibold"
-                  onclick={handleLeaveRoom}
-                  disabled={isBusy}
-                >
-                  Leave
-                </Button>
-              </CardContent>
-            </Card>
-          </section>
-        {:else}
-          <Lobby
-            activeTab={activeTab}
-            {isBusy}
-            onCreateRoom={handleCreateRoom}
-            onJoinRoom={handleJoinRoom}
-          />
-        {/if}
-
-        {#if popup.lastError}
-          <Notice kind="error" message={popup.lastError} onDismiss={dismissError} />
-        {/if}
-
-        {#if popup.lastWarning}
-          <Notice kind="warning" message={popup.lastWarning} onDismiss={dismissWarning} />
-        {/if}
-      </div>
+<div class="flex w-90 flex-col overflow-hidden bg-muted/40 text-foreground">
+    {#if backgroundState && activeTab}
+        <PopupContent {backgroundState} {activeTab} />
+    {:else if activeTabError}
+        <main class="p-3">
+            <Notice kind="error" message={activeTabError} />
+        </main>
     {/if}
-  </main>
 </div>

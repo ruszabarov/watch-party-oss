@@ -23,7 +23,7 @@
 
   const isReady = $derived(activeTab.isWatchPage);
   const canCreate = $derived(isReady && !isBusy);
-  const canJoin = $derived(activeTab.tabId != null && !isBusy);
+  const canJoin = $derived(!isBusy);
 
   const title = $derived.by(() => {
     if (isReady) {

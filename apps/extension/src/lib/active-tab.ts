@@ -1,11 +1,12 @@
 import { browser, type Browser } from 'wxt/browser';
 import type { ServiceId } from '@open-watch-party/shared';
 import { findServiceByUrl } from './services/registry';
+import { assertNotUndefined } from './asserters';
 
-type BrowserTab = Browser.tabs.Tab | undefined;
+type BrowserTab = Browser.tabs.Tab;
 
 export interface ActiveTabSummary {
-  tabId: number | null;
+  tabId: number;
   title: string;
   activeServiceId: ServiceId | null;
   isWatchPage: boolean;
@@ -14,31 +15,23 @@ export interface ActiveTabSummary {
 export async function queryActiveTabSummary(): Promise<ActiveTabSummary> {
   const [activeTab] = await browser.tabs.query({
     active: true,
-    currentWindow: true,
+    lastFocusedWindow: true,
+    windowType: 'normal',
   });
+
+  if (!activeTab) {
+    throw new Error('No active browser tab found.');
+  }
 
   return summarizeActiveTab(activeTab);
 }
 
-export function createEmptyActiveTabSummary(): ActiveTabSummary {
-  return {
-    tabId: null,
-    title: '',
-    activeServiceId: null,
-    isWatchPage: false,
-  };
-}
-
 function summarizeActiveTab(tab: BrowserTab): ActiveTabSummary {
-  if (!tab?.id) {
-    return createEmptyActiveTabSummary();
-  }
-
-  const url = tab.url ?? '';
-  const classification = findServiceByUrl(url);
+  const tabId = assertNotUndefined(tab.id);
+  const classification = tab.url ? findServiceByUrl(tab.url) : null;
 
   return {
-    tabId: tab.id,
+    tabId,
     title: tab.title ?? '',
     activeServiceId: classification?.serviceId ?? null,
     isWatchPage: classification?.isWatchPage ?? false,
