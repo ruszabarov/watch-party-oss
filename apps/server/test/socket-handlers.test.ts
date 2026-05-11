@@ -60,7 +60,6 @@ class FakeSocket {
 }
 
 const validPlaybackUpdatePayload = {
-  streamingServiceId: 'youtube',
   mediaId: 'abc123',
   title: 'Clip',
   playing: false,
@@ -324,31 +323,6 @@ describe('socket handlers', () => {
         },
       },
     });
-  });
-
-  it('rejects playback updates that switch the room streaming service', () => {
-    const { io, socketService } = createSocketServiceContext();
-    const socket = connectSocket(socketService, 'socket-1');
-    createRoom(socket);
-
-    let response: OperationResult<unknown> | null = null;
-    getHandler<unknown>(socket, 'playback:update')(
-      {
-        ...validPlaybackUpdatePayload,
-        streamingServiceId: 'netflix',
-        mediaId: '123456',
-      },
-      (value) => {
-        response = value;
-      },
-    );
-
-    expect(response).toEqual({
-      ok: false,
-      error: 'Streaming service mismatch.',
-    });
-    expect(io.emitted).toHaveLength(0);
-    expect(socket.emitted).toHaveLength(0);
   });
 
   it('rejects playback updates without a bound socket session', () => {

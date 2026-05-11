@@ -2,7 +2,6 @@ import { STREAMING_SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
 import type { PlaybackUpdate } from '@open-watch-party/shared';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
-import type { WatchPageContext } from '../../messaging';
 import { onMessage, sendMessage } from '../../messaging';
 import { isYoutubeAdPlayback } from './ads';
 
@@ -10,10 +9,6 @@ const YOUTUBE = STREAMING_SERVICE_DEFINITION_BY_ID.youtube;
 const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'ended'] as const;
 const SEEK_THRESHOLD_SEC = 1.5;
 const SUPPRESSION_MS = 750;
-
-function getMediaTitle(): string {
-  return document.title.replace(/\s*-\s*YouTube$/i, '').trim();
-}
 
 function findPlayer(video: HTMLVideoElement | null): Element | null {
   return video?.closest('#movie_player') ?? document.querySelector('#movie_player');
@@ -31,28 +26,28 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
   let suppressUntil = 0;
   let pendingFrame: number | null = null;
 
-  const readContext = (): WatchPageContext | null => {
+  const readMediaId = (): string | null => {
     const mediaId = YOUTUBE.extractMediaId(new URL(location.href));
     if (!activeVideo || mediaId === null) return null;
-    return { streamingServiceId: 'youtube', mediaId, title: getMediaTitle() || undefined };
+    return mediaId;
   };
 
   const readPlayback = (): PlaybackUpdate | null => {
-    const context = readContext();
-    if (!context || !activeVideo || isAdShowing(activePlayer)) return null;
+    const mediaId = readMediaId();
+    if (mediaId === null || !activeVideo || isAdShowing(activePlayer)) return null;
     return {
-      ...context,
-      title: getMediaTitle(),
+      mediaId,
+      title: document.title,
       positionSec: Number(activeVideo.currentTime.toFixed(3)),
       playing: !activeVideo.paused,
     };
   };
 
   const sendContextIfChanged = () => {
-    const context = readContext();
-    if (!context || context.mediaId === lastMediaId) return;
-    lastMediaId = context.mediaId;
-    void sendMessage('content:context', context).catch(() => undefined);
+    const mediaId = readMediaId();
+    if (mediaId === null || mediaId === lastMediaId) return;
+    lastMediaId = mediaId;
+    void sendMessage('content:context', mediaId).catch(() => undefined);
   };
 
   const sendPlaybackUpdate = () => {
@@ -116,12 +111,11 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
 
   ctx.addEventListener(window, 'wxt:locationchange', scheduleRefresh);
 
-  ctx.onInvalidated(onMessage('party:request-context', () => readContext()));
   ctx.onInvalidated(onMessage('party:request-playback', () => readPlayback()));
 
   ctx.onInvalidated(
     onMessage('party:apply-snapshot', ({ data }) => {
-      if (!activeVideo || !readContext()) return;
+      if (!activeVideo || readMediaId() === null) return;
       if (isAdShowing(activePlayer)) return;
 
       suppressUntil = performance.now() + SUPPRESSION_MS;

@@ -1,7 +1,6 @@
 import { createStore } from '@xstate/store';
 import type { PartySnapshot } from '@open-watch-party/shared';
 import type { StreamingServiceId } from '@open-watch-party/shared';
-import type { WatchPageContext } from '../messaging';
 
 export type SessionInfo = {
   readonly roomCode: string;
@@ -14,7 +13,7 @@ export type BackgroundState = {
   readonly room: PartySnapshot | undefined;
   readonly controlledTab: {
     readonly tabId: number;
-    readonly context: WatchPageContext;
+    readonly mediaId: string;
   } | null;
   readonly lastError: string | null;
   readonly lastWarning: string | null;
@@ -49,7 +48,7 @@ export const backgroundStore = createStore({
   context: initialBackgroundState,
   emits: {
     controlledTabClosed: () => {},
-    controlledTabMediaSwitchRequested: (_payload: { context: WatchPageContext }) => {},
+    controlledTabMediaSwitchRequested: (_payload: { mediaId: string }) => {},
     roomSnapshotChanged: () => {},
   },
   on: {
@@ -57,20 +56,20 @@ export const backgroundStore = createStore({
       state,
       event: {
         tabId: number;
-        context: WatchPageContext;
+        mediaId: string;
         requestMediaSwitch?: boolean;
       },
       enqueue,
     ): BackgroundState => {
       if (event.requestMediaSwitch) {
-        enqueue.emit.controlledTabMediaSwitchRequested({ context: event.context });
+        enqueue.emit.controlledTabMediaSwitchRequested({ mediaId: event.mediaId });
       }
 
       return {
         ...state,
         controlledTab: {
           tabId: event.tabId,
-          context: event.context,
+          mediaId: event.mediaId,
         },
       };
     },

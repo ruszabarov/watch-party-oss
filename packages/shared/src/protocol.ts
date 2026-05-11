@@ -75,14 +75,13 @@ const titleSchema = z
   .transform((value) => sanitizeOptionalTitle(value));
 
 export const playbackDraftSchema = z.object({
-  streamingServiceId: streamingServiceIdSchema,
   mediaId: mediaIdSchema,
   title: titleSchema,
   positionSec: positionSchema,
   playing: z.boolean(),
 });
 
-export const playbackStateInputSchema = playbackDraftSchema.omit({ streamingServiceId: true });
+export const playbackStateInputSchema = playbackDraftSchema;
 
 export const createRoomRequestSchema = z.object({
   memberId: memberIdSchema,

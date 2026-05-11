@@ -1,8 +1,10 @@
 import { browser } from 'wxt/browser';
-import type { PartySnapshot, PlaybackUpdate } from '@open-watch-party/shared';
-import type { WatchPageContext } from '../messaging';
+import type { PartySnapshot, PlaybackUpdate, StreamingServiceId } from '@open-watch-party/shared';
 import { sendMessage } from '../messaging';
-import { getStreamingServiceDefinition } from '../streaming-services/catalog';
+import {
+  findStreamingServiceByUrl,
+  getStreamingServiceDefinition,
+} from '../streaming-services/catalog';
 import { backgroundStore, backgroundSelectors } from './state';
 
 function isStreamingServiceUrl(
@@ -12,15 +14,11 @@ function isStreamingServiceUrl(
   return URL.canParse(rawUrl) && definition.matchesUrl(new URL(rawUrl));
 }
 
-function roomMatchesContext(
+function roomMatchesMediaId(
   room: PartySnapshot | undefined,
-  context: WatchPageContext,
+  mediaId: string,
 ): room is PartySnapshot {
-  return (
-    room !== undefined &&
-    room.streamingServiceId === context.streamingServiceId &&
-    room.playback.mediaId === context.mediaId
-  );
+  return room !== undefined && room.playback.mediaId === mediaId;
 }
 
 export class ControlledTabService {
@@ -47,7 +45,7 @@ export class ControlledTabService {
     });
   }
 
-  async handleContentContext(tabId: number, context: WatchPageContext): Promise<void> {
+  async handleContentContext(tabId: number, mediaId: string): Promise<void> {
     const room = backgroundSelectors.room.get();
     if (!room) {
       return;
@@ -55,7 +53,7 @@ export class ControlledTabService {
 
     const controlledTab = backgroundSelectors.controlledTab.get();
     if (!controlledTab) {
-      this.adoptTabForRoom(tabId, context, room);
+      this.adoptTabForRoom(tabId, mediaId, room);
       return;
     }
 
@@ -64,13 +62,11 @@ export class ControlledTabService {
     }
 
     const shouldRequestMediaSwitch =
-      context.streamingServiceId === room.streamingServiceId &&
-      controlledTab.context.mediaId !== context.mediaId &&
-      room.playback.mediaId !== context.mediaId;
+      controlledTab.mediaId !== mediaId && room.playback.mediaId !== mediaId;
 
     backgroundStore.trigger.setControlledTab({
       tabId,
-      context,
+      mediaId,
       requestMediaSwitch: shouldRequestMediaSwitch,
     });
 
@@ -84,10 +80,7 @@ export class ControlledTabService {
     const controlledTab = backgroundSelectors.controlledTab.get();
     if (!room || !controlledTab) return;
 
-    if (
-      controlledTab.context.streamingServiceId !== room.streamingServiceId ||
-      controlledTab.context.mediaId !== room.playback.mediaId
-    ) {
+    if (controlledTab.mediaId !== room.playback.mediaId) {
       await this.navigateControlledTabToRoom(controlledTab.tabId, room.watchUrl, false);
       return;
     }
@@ -118,33 +111,26 @@ export class ControlledTabService {
     return tabId === backgroundSelectors.controlledTab.get()?.tabId;
   }
 
-  async requireControllableWatchTab(tabId: number): Promise<PlaybackUpdate> {
-    const context = await this.requestContextFromTab(tabId);
-    if (!context) {
+  async requireControllableWatchTab(
+    tabId: number,
+  ): Promise<{ streamingServiceId: StreamingServiceId; playback: PlaybackUpdate }> {
+    const tab = await browser.tabs.get(tabId);
+    const match = findStreamingServiceByUrl(tab.url);
+    if (!match) {
       throw new Error('Open a supported watch page before starting a party.');
     }
-
-    const definition = getStreamingServiceDefinition(context.streamingServiceId);
-    if (!definition) {
-      throw new Error('This tab is not on a supported streaming service.');
+    if (!match.isWatchPage) {
+      throw new Error(`Open a ${match.streamingService.descriptor.label} watch page to start a party.`);
     }
 
+    const expectedMediaId = match.streamingService.extractMediaId(new URL(tab.url!));
     const playback = await this.requestPlaybackFromTab(tabId);
 
-    if (!playback || playback.mediaId !== context.mediaId) {
-      throw new Error(`${definition.descriptor.label} playback state is not ready yet.`);
+    if (!playback || playback.mediaId !== expectedMediaId) {
+      throw new Error(`${match.streamingService.descriptor.label} playback state is not ready yet.`);
     }
 
-    return playback;
-  }
-
-  private async requestContextFromTab(tabId: number): Promise<WatchPageContext | null> {
-    try {
-      const response = await sendMessage('party:request-context', undefined, { tabId });
-      return response ?? null;
-    } catch {
-      return null;
-    }
+    return { streamingServiceId: match.streamingServiceId, playback };
   }
 
   private async requestPlaybackFromTab(tabId: number): Promise<PlaybackUpdate | null> {
@@ -158,13 +144,13 @@ export class ControlledTabService {
 
   private adoptTabForRoom(
     tabId: number,
-    context: WatchPageContext,
+    mediaId: string,
     room: PartySnapshot | undefined,
   ): void {
-    if (!roomMatchesContext(room, context) || backgroundSelectors.controlledTab.get()) return;
+    if (!roomMatchesMediaId(room, mediaId) || backgroundSelectors.controlledTab.get()) return;
 
     void sendMessage('party:apply-snapshot', room, { tabId }).catch(() => undefined);
-    backgroundStore.trigger.setControlledTab({ tabId, context });
+    backgroundStore.trigger.setControlledTab({ tabId, mediaId });
     backgroundStore.trigger.setLastWarning({ message: null });
   }
 }

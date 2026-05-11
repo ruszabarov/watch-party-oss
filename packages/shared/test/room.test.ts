@@ -48,7 +48,6 @@ describe('room reducer', () => {
     applyPlaybackUpdate(
       room,
       {
-        streamingServiceId: 'netflix',
         mediaId: '123',
         title: 'Example',
         positionSec: 10,
@@ -61,7 +60,6 @@ describe('room reducer', () => {
     applyPlaybackUpdate(
       room,
       {
-        streamingServiceId: 'netflix',
         mediaId: '123',
         title: 'Example',
         positionSec: 12,
@@ -99,7 +97,6 @@ describe('room reducer', () => {
     applyPlaybackUpdate(
       room,
       {
-        streamingServiceId: 'netflix',
         mediaId: '456',
         title: 'Example',
         positionSec: 25,
@@ -281,7 +278,6 @@ describe('room reducer', () => {
     applyPlaybackUpdate(
       room,
       {
-        streamingServiceId: 'youtube',
         mediaId: 'next456',
         title: 'Clip 2',
         positionSec: 0,
@@ -346,7 +342,6 @@ describe('protocol schemas', () => {
 
   it('rejects malformed playback updates', () => {
     const result = playbackUpdateRequestSchema.safeParse({
-      streamingServiceId: 'youtube',
       mediaId: 'abc123',
       playing: true,
       positionSec: Number.POSITIVE_INFINITY,
@@ -357,7 +352,6 @@ describe('protocol schemas', () => {
 
   it('rejects playback updates with oversized positions', () => {
     const result = playbackUpdateRequestSchema.safeParse({
-      streamingServiceId: 'youtube',
       mediaId: 'abc123',
       playing: true,
       positionSec: 1e308,

@@ -24,8 +24,8 @@ class BackgroundController {
     backgroundStore.on('roomSnapshotChanged', () => {
       this.applyRoomSnapshotToControlledTab();
     });
-    backgroundStore.on('controlledTabMediaSwitchRequested', ({ context }) => {
-      this.partySessionService.updateRoomMediaFromControlledTab(context);
+    backgroundStore.on('controlledTabMediaSwitchRequested', ({ mediaId }) => {
+      this.partySessionService.updateRoomMediaFromControlledTab(mediaId);
     });
     backgroundStore.on('controlledTabClosed', () => {
       this.leaveRoomAfterControlledTabClosed();
@@ -79,8 +79,9 @@ class BackgroundController {
   }
 
   private async createRoomFromTab(tabId: number): Promise<void> {
-    const playback = await this.controlledTabService.requireControllableWatchTab(tabId);
-    await this.partySessionService.createRoom(tabId, playback);
+    const { streamingServiceId, playback } =
+      await this.controlledTabService.requireControllableWatchTab(tabId);
+    await this.partySessionService.createRoom(tabId, streamingServiceId, playback);
   }
 
   private async joinRoomFromTab(roomCode: string, tabId: number): Promise<void> {
@@ -97,9 +98,9 @@ class BackgroundController {
   }
 
   private registerContentHandlers(): void {
-    onMessage('content:context', async ({ data, sender }) => {
+    onMessage('content:context', async ({ data: mediaId, sender }) => {
       if (sender.tab?.id !== undefined) {
-        await this.controlledTabService.handleContentContext(sender.tab.id, data);
+        await this.controlledTabService.handleContentContext(sender.tab.id, mediaId);
       }
     });
 

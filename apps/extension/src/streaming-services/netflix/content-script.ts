@@ -2,7 +2,6 @@ import { STREAMING_SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
 import type { PlaybackUpdate } from '@open-watch-party/shared';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
-import type { WatchPageContext } from '../../messaging';
 import { onMessage, sendMessage } from '../../messaging';
 import {
   NETFLIX_PLAYER_REQUEST_SOURCE,
@@ -14,10 +13,6 @@ const NETFLIX = STREAMING_SERVICE_DEFINITION_BY_ID.netflix;
 const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'ended'] as const;
 const SEEK_THRESHOLD_SEC = 5;
 const SUPPRESSION_MS = 750;
-
-function getMediaTitle(): string {
-  return document.title.replace(/\s*-\s*Netflix$/i, '').trim() || 'Netflix';
-}
 
 function sendPlayerCommand(command: NetflixPlayerCommand): void {
   window.postMessage(
@@ -32,32 +27,36 @@ export function runNetflixContentScript(ctx: ContentScriptContext): void {
   let suppressUntil = 0;
   let pendingFrame: number | null = null;
 
-  const readContext = (): WatchPageContext | null => {
+  const readMediaId = (): string | null => {
     const mediaId = NETFLIX.extractMediaId(new URL(location.href));
     if (!activeVideo || mediaId === null) return null;
-    return { streamingServiceId: 'netflix', mediaId, title: getMediaTitle() };
+
+    return mediaId;
   };
 
   const readPlayback = (): PlaybackUpdate | null => {
-    const context = readContext();
-    if (!context || !activeVideo) return null;
+    const mediaId = readMediaId();
+    if (mediaId === null || !activeVideo) return null;
+
     return {
-      ...context,
-      title: getMediaTitle(),
-      positionSec: Number(activeVideo.currentTime.toFixed(3)),
+      mediaId,
+      title: document.title,
+      positionSec: activeVideo.currentTime,
       playing: !activeVideo.paused,
     };
   };
 
   const sendContextIfChanged = () => {
-    const context = readContext();
-    if (!context || context.mediaId === lastMediaId) return;
-    lastMediaId = context.mediaId;
-    void sendMessage('content:context', context).catch(() => undefined);
+    const mediaId = readMediaId();
+    if (mediaId === null || mediaId === lastMediaId) return;
+
+    lastMediaId = mediaId;
+    void sendMessage('content:context', mediaId).catch(() => undefined);
   };
 
   const sendPlaybackUpdate = () => {
     if (performance.now() < suppressUntil) return;
+
     const update = readPlayback();
     if (update) void sendMessage('content:playback-update', update).catch(() => undefined);
   };
@@ -95,12 +94,11 @@ export function runNetflixContentScript(ctx: ContentScriptContext): void {
 
   ctx.addEventListener(window, 'wxt:locationchange', scheduleRefresh);
 
-  ctx.onInvalidated(onMessage('party:request-context', () => readContext()));
   ctx.onInvalidated(onMessage('party:request-playback', () => readPlayback()));
 
   ctx.onInvalidated(
     onMessage('party:apply-snapshot', ({ data }) => {
-      if (!activeVideo || !readContext()) return;
+      if (!activeVideo || readMediaId() === null) return;
 
       suppressUntil = performance.now() + SUPPRESSION_MS;
 

@@ -93,11 +93,11 @@ export function applyPlaybackUpdate(
   memberId: string,
   now = Date.now(),
 ): PlaybackState {
-  assertValidMediaId(update.streamingServiceId, update.mediaId);
+  assertValidMediaId(room.streamingServiceId, update.mediaId);
 
   room.sequence += 1;
   const playback: PlaybackState = {
-    streamingServiceId: update.streamingServiceId,
+    streamingServiceId: room.streamingServiceId,
     mediaId: update.mediaId,
     playing: update.playing,
     positionSec: normalizePosition(update.positionSec),

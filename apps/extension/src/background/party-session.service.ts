@@ -8,11 +8,11 @@ import type {
   PartySnapshot,
   PlaybackUpdate,
   RoomResponse,
+  StreamingServiceId,
 } from '@open-watch-party/shared';
 
 import { getErrorMessage } from '~/utils/errors.js';
 import { getSettings } from '../storage/settings';
-import type { WatchPageContext } from '../messaging';
 import { RealtimeConnection } from './connection.service';
 import { backgroundStore, backgroundSelectors } from './state';
 
@@ -28,31 +28,29 @@ export class PartySessionService {
     });
   }
 
-  updateRoomMediaFromControlledTab(context: WatchPageContext): void {
-    void this.sendMediaSwitchUpdate(context).catch((error) => {
+  updateRoomMediaFromControlledTab(mediaId: string): void {
+    void this.sendMediaSwitchUpdate(mediaId).catch((error) => {
       backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
     });
   }
 
-  async createRoom(tabId: number, playback: PlaybackUpdate): Promise<void> {
+  async createRoom(
+    tabId: number,
+    streamingServiceId: StreamingServiceId,
+    playback: PlaybackUpdate,
+  ): Promise<void> {
     this.assertNoActiveSession();
 
-    const { streamingServiceId, mediaId, title, ...initialPlayback } = playback;
     const settings = await getSettings();
 
     const response = await this.emitRoomCreate({
       memberId: this.ensureMemberId(),
       memberName: settings.memberName,
       streamingServiceId,
-      initialPlayback: { ...initialPlayback, mediaId, title },
+      initialPlayback: playback,
     });
 
-    const context: WatchPageContext = {
-      streamingServiceId,
-      mediaId,
-      title: title || undefined,
-    };
-    backgroundStore.trigger.setControlledTab({ tabId, context });
+    backgroundStore.trigger.setControlledTab({ tabId, mediaId: playback.mediaId });
     await this.applyRoomResponse(response, true);
   }
 
@@ -88,12 +86,8 @@ export class PartySessionService {
       return;
     }
 
-    const playbackContext = backgroundSelectors.controlledTab.get()?.context ?? null;
-    if (
-      playbackContext &&
-      (playbackContext.streamingServiceId !== update.streamingServiceId ||
-        playbackContext.mediaId !== update.mediaId)
-    ) {
+    const controlledMediaId = backgroundSelectors.controlledTab.get()?.mediaId ?? null;
+    if (controlledMediaId !== null && controlledMediaId !== update.mediaId) {
       backgroundStore.trigger.setLastWarning({
         message: 'Local media no longer matches the active room.',
       });
@@ -162,27 +156,19 @@ export class PartySessionService {
     }
   }
 
-  private async sendMediaSwitchUpdate(context: WatchPageContext): Promise<void> {
+  private async sendMediaSwitchUpdate(mediaId: string): Promise<void> {
     const session = backgroundSelectors.session.get();
     if (!session) {
       return;
     }
 
-    if (context.streamingServiceId !== session.streamingServiceId) {
-      backgroundStore.trigger.setLastWarning({
-        message: 'Rooms can only switch media within the original streaming service.',
-      });
-      return;
-    }
-
-    if (backgroundSelectors.room.get()?.playback.mediaId === context.mediaId) {
+    if (backgroundSelectors.room.get()?.playback.mediaId === mediaId) {
       return;
     }
 
     await this.sendPlaybackUpdate({
-      streamingServiceId: context.streamingServiceId,
-      mediaId: context.mediaId,
-      title: context.title ?? '',
+      mediaId,
+      title: '',
       positionSec: 0,
       playing: false,
     });
