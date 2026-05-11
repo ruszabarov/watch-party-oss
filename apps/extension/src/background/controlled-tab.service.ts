@@ -3,12 +3,7 @@ import type { PartySnapshot, PlaybackUpdate } from '@open-watch-party/shared';
 import type { WatchPageContext } from '../messaging';
 import { sendMessage } from '../messaging';
 import { getStreamingServiceDefinition } from '../streaming-services/catalog';
-import type { BackgroundState, BackgroundStore } from './state';
-
-interface ControllableWatchTabState {
-  context: WatchPageContext;
-  playback: PlaybackUpdate;
-}
+import { backgroundStore, backgroundSelectors } from './state';
 
 function isStreamingServiceUrl(
   definition: { matchesUrl(url: URL): boolean },
@@ -29,22 +24,16 @@ function roomMatchesContext(
 }
 
 export class ControlledTabService {
-  constructor(private readonly store: BackgroundStore) {}
-
-  private get state(): BackgroundState {
-    return this.store.getSnapshot().context;
-  }
-
   registerEventHandlers(): void {
     browser.tabs.onUpdated.addListener((tabId, _changeInfo, tab) => {
-      const controlledTab = this.state.controlledTab;
+      const controlledTab = backgroundSelectors.controlledTab.get();
       if (tabId === controlledTab?.tabId && tab.url) {
-        const session = this.state.session;
+        const session = backgroundSelectors.session.get();
         const sessionStreamingService = session
           ? getStreamingServiceDefinition(session.streamingServiceId)
           : null;
         if (sessionStreamingService && !isStreamingServiceUrl(sessionStreamingService, tab.url)) {
-          this.store.trigger.setLastWarning({
+          backgroundStore.trigger.setLastWarning({
             message: `The controlled tab left ${sessionStreamingService.descriptor.label}.`,
           });
         }
@@ -52,19 +41,19 @@ export class ControlledTabService {
     });
 
     browser.tabs.onRemoved.addListener((tabId) => {
-      if (this.state.controlledTab?.tabId === tabId) {
-        this.store.trigger.closeControlledTab();
+      if (backgroundSelectors.controlledTab.get()?.tabId === tabId) {
+        backgroundStore.trigger.closeControlledTab();
       }
     });
   }
 
   async handleContentContext(tabId: number, context: WatchPageContext): Promise<void> {
-    const room = this.state.room;
+    const room = backgroundSelectors.room.get();
     if (!room) {
       return;
     }
 
-    const controlledTab = this.state.controlledTab;
+    const controlledTab = backgroundSelectors.controlledTab.get();
     if (!controlledTab) {
       this.adoptTabForRoom(tabId, context, room);
       return;
@@ -79,7 +68,7 @@ export class ControlledTabService {
       controlledTab.context.mediaId !== context.mediaId &&
       room.playback.mediaId !== context.mediaId;
 
-    this.store.trigger.setControlledTab({
+    backgroundStore.trigger.setControlledTab({
       tabId,
       context,
       requestMediaSwitch: shouldRequestMediaSwitch,
@@ -91,8 +80,8 @@ export class ControlledTabService {
   }
 
   async applySnapshotToControlledTab(): Promise<void> {
-    const room = this.state.room;
-    const controlledTab = this.state.controlledTab;
+    const room = backgroundSelectors.room.get();
+    const controlledTab = backgroundSelectors.controlledTab.get();
     if (!room || !controlledTab) return;
 
     if (
@@ -106,14 +95,14 @@ export class ControlledTabService {
     void sendMessage('party:apply-snapshot', room, { tabId: controlledTab.tabId }).catch(
       () => undefined,
     );
-    this.store.trigger.setLastWarning({ message: null });
+    backgroundStore.trigger.setLastWarning({ message: null });
   }
 
   async navigateControlledTabToRoom(tabId: number, watchUrl: string, active = true): Promise<void> {
-    if (this.state.controlledTab?.tabId === tabId) {
-      this.store.trigger.clearControlledTab();
+    if (backgroundSelectors.controlledTab.get()?.tabId === tabId) {
+      backgroundStore.trigger.clearControlledTab();
     }
-    this.store.trigger.setLastWarning({ message: null });
+    backgroundStore.trigger.setLastWarning({ message: null });
 
     try {
       await browser.tabs.update(tabId, {
@@ -126,10 +115,10 @@ export class ControlledTabService {
   }
 
   isControlledTab(tabId: number): boolean {
-    return tabId === this.state.controlledTab?.tabId;
+    return tabId === backgroundSelectors.controlledTab.get()?.tabId;
   }
 
-  async requireControllableWatchTab(tabId: number): Promise<ControllableWatchTabState> {
+  async requireControllableWatchTab(tabId: number): Promise<PlaybackUpdate> {
     const context = await this.requestContextFromTab(tabId);
     if (!context) {
       throw new Error('Open a supported watch page before starting a party.');
@@ -146,7 +135,7 @@ export class ControlledTabService {
       throw new Error(`${definition.descriptor.label} playback state is not ready yet.`);
     }
 
-    return { context, playback };
+    return playback;
   }
 
   private async requestContextFromTab(tabId: number): Promise<WatchPageContext | null> {
@@ -172,10 +161,10 @@ export class ControlledTabService {
     context: WatchPageContext,
     room: PartySnapshot | undefined,
   ): void {
-    if (!roomMatchesContext(room, context) || this.state.controlledTab) return;
+    if (!roomMatchesContext(room, context) || backgroundSelectors.controlledTab.get()) return;
 
     void sendMessage('party:apply-snapshot', room, { tabId }).catch(() => undefined);
-    this.store.trigger.setControlledTab({ tabId, context });
-    this.store.trigger.setLastWarning({ message: null });
+    backgroundStore.trigger.setControlledTab({ tabId, context });
+    backgroundStore.trigger.setLastWarning({ message: null });
   }
 }

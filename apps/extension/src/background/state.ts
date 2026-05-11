@@ -20,16 +20,6 @@ export type BackgroundState = {
   readonly lastWarning: string | null;
 };
 
-export function createBackgroundState(): BackgroundState {
-  return {
-    session: undefined,
-    room: undefined,
-    controlledTab: null,
-    lastError: null,
-    lastWarning: null,
-  };
-}
-
 function updateSessionRoom(state: BackgroundState, room: PartySnapshot): BackgroundState {
   if (!state.session) {
     return state;
@@ -47,111 +37,124 @@ function updateSessionRoom(state: BackgroundState, room: PartySnapshot): Backgro
   };
 }
 
-export function createBackgroundStore() {
-  return createStore({
-    context: createBackgroundState(),
-    emits: {
-      controlledTabClosed: () => {},
-      controlledTabMediaSwitchRequested: (_payload: { context: WatchPageContext }) => {},
-      roomSnapshotChanged: () => {},
+const initialBackgroundState: BackgroundState = {
+  session: undefined,
+  room: undefined,
+  controlledTab: null,
+  lastError: null,
+  lastWarning: null,
+};
+
+export const backgroundStore = createStore({
+  context: initialBackgroundState,
+  emits: {
+    controlledTabClosed: () => {},
+    controlledTabMediaSwitchRequested: (_payload: { context: WatchPageContext }) => {},
+    roomSnapshotChanged: () => {},
+  },
+  on: {
+    setControlledTab: (
+      state,
+      event: {
+        tabId: number;
+        context: WatchPageContext;
+        requestMediaSwitch?: boolean;
+      },
+      enqueue,
+    ): BackgroundState => {
+      if (event.requestMediaSwitch) {
+        enqueue.emit.controlledTabMediaSwitchRequested({ context: event.context });
+      }
+
+      return {
+        ...state,
+        controlledTab: {
+          tabId: event.tabId,
+          context: event.context,
+        },
+      };
     },
-    on: {
-      setControlledTab: (
-        state,
-        event: {
-          tabId: number;
-          context: WatchPageContext;
-          requestMediaSwitch?: boolean;
-        },
-        enqueue,
-      ) => {
-        if (event.requestMediaSwitch) {
-          enqueue.emit.controlledTabMediaSwitchRequested({ context: event.context });
-        }
 
-        return {
-          ...state,
-          controlledTab: {
-            tabId: event.tabId,
-            context: event.context,
-          },
-        };
-      },
+    clearControlledTab: (state): BackgroundState => ({
+      ...state,
+      controlledTab: null,
+    }),
 
-      clearControlledTab: (state) => ({
+    closeControlledTab: (state, _event, enqueue): BackgroundState => {
+      enqueue.emit.controlledTabClosed();
+
+      return {
         ...state,
         controlledTab: null,
-      }),
+      };
+    },
 
-      closeControlledTab: (state, _event, enqueue) => {
-        enqueue.emit.controlledTabClosed();
-
-        return {
-          ...state,
-          controlledTab: null,
-        };
+    setJoinedSession: (
+      state,
+      event: {
+        session: SessionInfo;
+        room: PartySnapshot;
+        applySnapshotToControlledTab?: boolean;
       },
+      enqueue,
+    ): BackgroundState => {
+      if (event.applySnapshotToControlledTab) {
+        enqueue.emit.roomSnapshotChanged();
+      }
 
-      setJoinedSession: (
-        state,
-        event: {
-          session: SessionInfo;
-          room: PartySnapshot;
-          applySnapshotToControlledTab?: boolean;
-        },
-        enqueue,
-      ) => {
-        if (event.applySnapshotToControlledTab) {
-          enqueue.emit.roomSnapshotChanged();
-        }
-
-        return {
-          ...state,
-          session: event.session,
-          room: event.room,
-          lastError: null,
-        };
-      },
-
-      setSessionError: (state, event: { message: string; clearSession?: boolean }) => ({
+      return {
         ...state,
-        session: event.clearSession ? undefined : state.session,
-        room: event.clearSession ? undefined : state.room,
-        lastError: event.message,
-      }),
-
-      leaveRoom: (state) => ({
-        ...state,
-        session: undefined,
-        room: undefined,
-        controlledTab: null,
+        session: event.session,
+        room: event.room,
         lastError: null,
-        lastWarning: null,
-      }),
-
-      updateSessionRoom: (
-        state,
-        event: { room: PartySnapshot; applySnapshotToControlledTab?: boolean },
-        enqueue,
-      ) => {
-        if (event.applySnapshotToControlledTab) {
-          enqueue.emit.roomSnapshotChanged();
-        }
-
-        return updateSessionRoom(state, event.room);
-      },
-
-      reportError: (state, event: { message: string }) => ({
-        ...state,
-        lastError: event.message,
-      }),
-
-      setLastWarning: (state, event: { message: string | null }) => ({
-        ...state,
-        lastWarning: event.message,
-      }),
+      };
     },
-  });
-}
 
-export type BackgroundStore = ReturnType<typeof createBackgroundStore>;
+    setSessionError: (
+      state,
+      event: { message: string; clearSession?: boolean },
+    ): BackgroundState => ({
+      ...state,
+      session: event.clearSession ? undefined : state.session,
+      room: event.clearSession ? undefined : state.room,
+      lastError: event.message,
+    }),
+
+    leaveRoom: (state): BackgroundState => ({
+      ...state,
+      session: undefined,
+      room: undefined,
+      controlledTab: null,
+      lastError: null,
+      lastWarning: null,
+    }),
+
+    updateSessionRoom: (
+      state,
+      event: { room: PartySnapshot; applySnapshotToControlledTab?: boolean },
+      enqueue,
+    ): BackgroundState => {
+      if (event.applySnapshotToControlledTab) {
+        enqueue.emit.roomSnapshotChanged();
+      }
+
+      return updateSessionRoom(state, event.room);
+    },
+
+    reportError: (state, event: { message: string }): BackgroundState => ({
+      ...state,
+      lastError: event.message,
+    }),
+
+    setLastWarning: (state, event: { message: string | null }): BackgroundState => ({
+      ...state,
+      lastWarning: event.message,
+    }),
+  },
+});
+
+export const backgroundSelectors = {
+  session: backgroundStore.select((s) => s.session),
+  room: backgroundStore.select((s) => s.room),
+  controlledTab: backgroundStore.select((s) => s.controlledTab),
+};

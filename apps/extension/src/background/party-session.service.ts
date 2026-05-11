@@ -14,7 +14,7 @@ import { getErrorMessage } from '~/utils/errors.js';
 import { getSettings } from '../storage/settings';
 import type { WatchPageContext } from '../messaging';
 import { RealtimeConnection } from './connection.service';
-import type { BackgroundState, BackgroundStore } from './state';
+import { backgroundStore, backgroundSelectors } from './state';
 
 const ACTIVE_ROOM_EXISTS_ERROR = 'Leave your current room before joining or creating another room.';
 const SERVER_URL = __DEFAULT_SERVER_URL__;
@@ -22,42 +22,37 @@ const SERVER_URL = __DEFAULT_SERVER_URL__;
 export class PartySessionService {
   private connection: RealtimeConnection | null = null;
 
-  constructor(private readonly store: BackgroundStore) {}
-
-  private get state(): BackgroundState {
-    return this.store.getSnapshot().context;
-  }
-
   updateRoomPlaybackFromControlledTab(update: PlaybackUpdate): void {
     void this.sendPlaybackUpdate(update).catch((error) => {
-      this.store.trigger.reportError({ message: getErrorMessage(error) });
+      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
     });
   }
 
   updateRoomMediaFromControlledTab(context: WatchPageContext): void {
     void this.sendMediaSwitchUpdate(context).catch((error) => {
-      this.store.trigger.reportError({ message: getErrorMessage(error) });
+      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
     });
   }
 
-  async createRoom(
-    tabId: number,
-    context: WatchPageContext,
-    playback: PlaybackUpdate,
-  ): Promise<void> {
+  async createRoom(tabId: number, playback: PlaybackUpdate): Promise<void> {
     this.assertNoActiveSession();
 
-    const { streamingServiceId: _playbackStreamingServiceId, ...initialPlayback } = playback;
+    const { streamingServiceId, mediaId, title, ...initialPlayback } = playback;
     const settings = await getSettings();
 
     const response = await this.emitRoomCreate({
       memberId: this.ensureMemberId(),
       memberName: settings.memberName,
-      streamingServiceId: context.streamingServiceId,
-      initialPlayback,
+      streamingServiceId,
+      initialPlayback: { ...initialPlayback, mediaId, title },
     });
 
-    this.store.trigger.setControlledTab({ tabId, context });
+    const context: WatchPageContext = {
+      streamingServiceId,
+      mediaId,
+      title: title || undefined,
+    };
+    backgroundStore.trigger.setControlledTab({ tabId, context });
     await this.applyRoomResponse(response, true);
   }
 
@@ -76,7 +71,7 @@ export class PartySessionService {
   }
 
   async leaveRoom(): Promise<void> {
-    if (this.state.session && this.connection) {
+    if (backgroundSelectors.session.get() && this.connection) {
       try {
         await this.emitRoomLeave();
       } catch {
@@ -85,87 +80,70 @@ export class PartySessionService {
     }
 
     this.closeConnection();
-    this.store.trigger.leaveRoom();
+    backgroundStore.trigger.leaveRoom();
   }
 
   private async sendPlaybackUpdate(update: PlaybackUpdate): Promise<void> {
-    if (!this.state.session) {
+    if (!backgroundSelectors.session.get()) {
       return;
     }
 
-    const playbackContext = this.state.controlledTab?.context ?? null;
+    const playbackContext = backgroundSelectors.controlledTab.get()?.context ?? null;
     if (
       playbackContext &&
       (playbackContext.streamingServiceId !== update.streamingServiceId ||
         playbackContext.mediaId !== update.mediaId)
     ) {
-      this.store.trigger.setLastWarning({
+      backgroundStore.trigger.setLastWarning({
         message: 'Local media no longer matches the active room.',
       });
       return;
     }
 
     const snapshot = await this.emitPlaybackUpdate(update);
-    this.store.trigger.updateSessionRoom({ room: snapshot });
+    backgroundStore.trigger.updateSessionRoom({ room: snapshot });
   }
 
   private ensureMemberId(): string {
-    return this.state.session?.memberId ?? `${browser.runtime.id}:${crypto.randomUUID()}`;
+    return backgroundSelectors.session.get()?.memberId ?? `${browser.runtime.id}:${crypto.randomUUID()}`;
   }
 
   private assertNoActiveSession(): void {
-    if (this.state.session) {
+    if (backgroundSelectors.session.get()) {
       throw new Error(ACTIVE_ROOM_EXISTS_ERROR);
     }
   }
 
-  private async ensureConnection(): Promise<void> {
-    const serverUrl = SERVER_URL;
-
-    if (this.connection?.serverUrl === serverUrl) {
-      return;
+  private ensureConnection(): RealtimeConnection {
+    if (this.connection) {
+      return this.connection;
     }
 
-    this.closeConnection();
-
-    const connection = new RealtimeConnection(serverUrl);
+    const connection = new RealtimeConnection(SERVER_URL);
     this.connection = connection;
 
     connection.onConnectionError((error) => {
-      if (this.connection !== connection) {
-        return;
-      }
-
-      this.store.trigger.reportError({ message: getErrorMessage(error) });
+      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
     });
 
-    connection.onReconnect(async () => {
-      if (this.connection !== connection) {
-        return;
-      }
-
-      await this.rejoinRoom();
-    });
+    connection.onReconnect(() => this.rejoinRoom());
 
     connection.on('room:state', (snapshot) => {
-      if (this.connection !== connection) {
-        return;
-      }
-
-      this.store.trigger.updateSessionRoom({ room: snapshot });
+      backgroundStore.trigger.updateSessionRoom({ room: snapshot });
     });
 
     connection.on('playback:state', (snapshot) => {
-      if (this.connection !== connection) {
-        return;
-      }
-
-      this.store.trigger.updateSessionRoom({ room: snapshot, applySnapshotToControlledTab: true });
+      backgroundStore.trigger.updateSessionRoom({
+        room: snapshot,
+        applySnapshotToControlledTab: true,
+      });
     });
+
+    return connection;
   }
 
   private async rejoinRoom(): Promise<void> {
-    const session = this.state.session;
+    const session = backgroundSelectors.session.get();
     if (!session) {
       return;
     }
@@ -180,24 +158,24 @@ export class PartySessionService {
 
       await this.applyRoomResponse(response, true);
     } catch (error) {
-      this.store.trigger.setSessionError({ message: getErrorMessage(error) });
+      backgroundStore.trigger.setSessionError({ message: getErrorMessage(error) });
     }
   }
 
   private async sendMediaSwitchUpdate(context: WatchPageContext): Promise<void> {
-    const session = this.state.session;
+    const session = backgroundSelectors.session.get();
     if (!session) {
       return;
     }
 
     if (context.streamingServiceId !== session.streamingServiceId) {
-      this.store.trigger.setLastWarning({
+      backgroundStore.trigger.setLastWarning({
         message: 'Rooms can only switch media within the original streaming service.',
       });
       return;
     }
 
-    if (this.state.room?.playback.mediaId === context.mediaId) {
+    if (backgroundSelectors.room.get()?.playback.mediaId === context.mediaId) {
       return;
     }
 
@@ -219,7 +197,7 @@ export class PartySessionService {
       memberId: response.memberId,
       streamingServiceId: response.snapshot.streamingServiceId,
     };
-    this.store.trigger.setJoinedSession({
+    backgroundStore.trigger.setJoinedSession({
       session: nextSession,
       room: response.snapshot,
       applySnapshotToControlledTab,
@@ -227,36 +205,19 @@ export class PartySessionService {
   }
 
   private async emitRoomCreate(payload: CreateRoomRequest): Promise<RoomResponse> {
-    const connection = await this.getConnection();
-    const response = await connection.createRoom(payload);
-    return this.unwrapAckResponse(response);
+    return this.unwrapAckResponse(await this.ensureConnection().createRoom(payload));
   }
 
   private async emitRoomJoin(payload: JoinRoomRequest): Promise<RoomResponse> {
-    const connection = await this.getConnection();
-    const response = await connection.joinRoom(payload);
-    return this.unwrapAckResponse(response);
+    return this.unwrapAckResponse(await this.ensureConnection().joinRoom(payload));
   }
 
   private async emitRoomLeave(): Promise<{ roomCode: string }> {
-    const connection = await this.getConnection();
-    const response = await connection.leaveRoom();
-    return this.unwrapAckResponse(response);
+    return this.unwrapAckResponse(await this.ensureConnection().leaveRoom());
   }
 
   private async emitPlaybackUpdate(update: PlaybackUpdate): Promise<PartySnapshot> {
-    const connection = await this.getConnection();
-    const response = await connection.updatePlayback(update);
-    return this.unwrapAckResponse(response);
-  }
-
-  private async getConnection(): Promise<RealtimeConnection> {
-    await this.ensureConnection();
-    if (!this.connection) {
-      throw new Error('Realtime connection unavailable.');
-    }
-
-    return this.connection;
+    return this.unwrapAckResponse(await this.ensureConnection().updatePlayback(update));
   }
 
   private closeConnection(): void {

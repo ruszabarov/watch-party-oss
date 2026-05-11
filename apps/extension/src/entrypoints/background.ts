@@ -3,37 +3,31 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { getErrorMessage } from '~/utils/errors.js';
 import { ControlledTabService } from '../background/controlled-tab.service';
 import { PartySessionService } from '../background/party-session.service';
-import {
-  createBackgroundStore,
-  type BackgroundState,
-  type BackgroundStore,
-} from '../background/state';
+import { backgroundStore, type BackgroundState } from '../background/state';
 import { onMessage } from '../messaging';
 
 export default defineBackground(() => {
-  const store = createBackgroundStore();
-  const controlledTabService = new ControlledTabService(store);
-  const partySessionService = new PartySessionService(store);
-  const controller = new BackgroundController(store, controlledTabService, partySessionService);
+  const controlledTabService = new ControlledTabService();
+  const partySessionService = new PartySessionService();
+  const controller = new BackgroundController(controlledTabService, partySessionService);
 
   controller.start();
 });
 
 class BackgroundController {
   constructor(
-    private readonly store: BackgroundStore,
     private readonly controlledTabService: ControlledTabService,
     private readonly partySessionService: PartySessionService,
   ) {}
 
   start(): void {
-    this.store.on('roomSnapshotChanged', () => {
+    backgroundStore.on('roomSnapshotChanged', () => {
       this.applyRoomSnapshotToControlledTab();
     });
-    this.store.on('controlledTabMediaSwitchRequested', ({ context }) => {
+    backgroundStore.on('controlledTabMediaSwitchRequested', ({ context }) => {
       this.partySessionService.updateRoomMediaFromControlledTab(context);
     });
-    this.store.on('controlledTabClosed', () => {
+    backgroundStore.on('controlledTabClosed', () => {
       this.leaveRoomAfterControlledTabClosed();
     });
 
@@ -44,7 +38,7 @@ class BackgroundController {
 
   private applyRoomSnapshotToControlledTab(): void {
     void this.controlledTabService.applySnapshotToControlledTab().catch((error) => {
-      this.store.trigger.reportError({ message: getErrorMessage(error) });
+      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
     });
   }
 
@@ -55,14 +49,14 @@ class BackgroundController {
   }
 
   private getState(): BackgroundState {
-    return this.store.getSnapshot().context;
+    return backgroundStore.getSnapshot().context;
   }
 
   private async runPopupAction(action: () => Promise<void>): Promise<BackgroundState> {
     try {
       await action();
     } catch (error) {
-      this.store.trigger.reportError({ message: getErrorMessage(error) });
+      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
     }
 
     return this.getState();
@@ -85,9 +79,8 @@ class BackgroundController {
   }
 
   private async createRoomFromTab(tabId: number): Promise<void> {
-    const { context, playback } =
-      await this.controlledTabService.requireControllableWatchTab(tabId);
-    await this.partySessionService.createRoom(tabId, context, playback);
+    const playback = await this.controlledTabService.requireControllableWatchTab(tabId);
+    await this.partySessionService.createRoom(tabId, playback);
   }
 
   private async joinRoomFromTab(roomCode: string, tabId: number): Promise<void> {
