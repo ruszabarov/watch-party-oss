@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { ZodType } from 'zod';
+import type { ZodType } from 'zod';
 import {
   createRoomRequestSchema,
   joinRoomRequestSchema,
