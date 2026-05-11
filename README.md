@@ -95,9 +95,9 @@ service ID, display metadata, URL parsing, canonical watch URL builder, and
 extension match patterns.
 
 Then add the extension-only DOM integration under
-`apps/extension/src/utils/services/<id>.ts`, add a one-line
+`apps/extension/src/services/<id>.ts`, add a one-line
 `runServiceContentScript(MY_SERVICE)` entrypoint, and register the plugin in
-`SERVICE_PLUGINS`.
+`SERVICE_PLUGIN_BY_ID`.
 
 Issues and pull requests for new services, bug fixes, documentation, and store
 listing improvements are welcome.

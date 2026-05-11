@@ -1,23 +1,20 @@
 import { defineBackground } from 'wxt/utils/define-background';
 
-import { getErrorMessage } from '$lib/errors.js';
-import { onMessage } from '../utils/protocol/messaging';
-import { PartySessionService } from '../utils/background/party-session-service';
-import { SettingsStore } from '../utils/background/settings-store';
-import { createSyncedBackgroundStore, type BackgroundStore } from '../utils/background/state';
-import { ControlledTabService } from '../utils/background/controlled-tab-service';
+import { getErrorMessage } from '~/utils/errors.js';
+import { ControlledTabService } from '../background/controlled-tab-service';
+import { PartySessionService } from '../background/party-session-service';
+import {
+  createBackgroundStore,
+  type BackgroundState,
+  type BackgroundStore,
+} from '../background/state';
+import { onMessage } from '../messaging';
 
 export default defineBackground(() => {
-  const store = createSyncedBackgroundStore();
-  const settingsStore = new SettingsStore(store);
+  const store = createBackgroundStore();
   const controlledTabService = new ControlledTabService(store);
-  const partySessionService = new PartySessionService(store, settingsStore);
-  const controller = new BackgroundController(
-    store,
-    settingsStore,
-    controlledTabService,
-    partySessionService,
-  );
+  const partySessionService = new PartySessionService(store);
+  const controller = new BackgroundController(store, controlledTabService, partySessionService);
 
   controller.start();
 });
@@ -25,7 +22,6 @@ export default defineBackground(() => {
 class BackgroundController {
   constructor(
     private readonly store: BackgroundStore,
-    private readonly settingsStore: SettingsStore,
     private readonly controlledTabService: ControlledTabService,
     private readonly partySessionService: PartySessionService,
   ) {}
@@ -37,12 +33,13 @@ class BackgroundController {
     this.store.on('controlledTabMediaSwitchRequested', ({ context }) => {
       this.partySessionService.updateRoomMediaFromControlledTab(context);
     });
+    this.store.on('controlledTabClosed', () => {
+      this.leaveRoomAfterControlledTabClosed();
+    });
 
     this.registerContentHandlers();
     this.registerPopupHandlers();
     this.controlledTabService.registerEventHandlers();
-
-    void this.restoreStoredSession();
   }
 
   private applyRoomSnapshotToControlledTab(): void {
@@ -51,15 +48,29 @@ class BackgroundController {
     });
   }
 
-  private async runPopupAction(action: () => Promise<void>): Promise<void> {
+  private leaveRoomAfterControlledTabClosed(): void {
+    void this.partySessionService.leaveRoom().catch(() => {
+      // Best effort; closing a controlled tab should not surface a user-facing error.
+    });
+  }
+
+  private getState(): BackgroundState {
+    return this.store.getSnapshot().context;
+  }
+
+  private async runPopupAction(action: () => Promise<void>): Promise<BackgroundState> {
     try {
       await action();
     } catch (error) {
       this.store.trigger.reportError({ message: getErrorMessage(error) });
     }
+
+    return this.getState();
   }
 
   private registerPopupHandlers(): void {
+    onMessage('popup:get-state', () => this.getState());
+
     onMessage('popup:create-room', ({ data }) =>
       this.runPopupAction(() => this.createRoomFromTab(data.tabId)),
     );
@@ -70,10 +81,6 @@ class BackgroundController {
 
     onMessage('popup:leave-room', () =>
       this.runPopupAction(() => this.partySessionService.leaveRoom()),
-    );
-
-    onMessage('popup:update-settings', ({ data }) =>
-      this.runPopupAction(() => this.settingsStore.updateSettings(data)),
     );
   }
 
@@ -94,11 +101,6 @@ class BackgroundController {
       await this.partySessionService.leaveRoom();
       throw error;
     }
-  }
-
-  private async restoreStoredSession(): Promise<void> {
-    await this.settingsStore.hydrate();
-    await this.partySessionService.connectForStoredSession();
   }
 
   private registerContentHandlers(): void {

@@ -6,14 +6,3 @@ export const logger = pino({
     level: (label) => ({ level: label }),
   },
 });
-
-export function getLogError(error: unknown): { name?: string; message: string } {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-    };
-  }
-
-  return { message: String(error) };
-}

@@ -1,7 +1,6 @@
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
 import { SUPPORTED_SERVICE_CONTENT_MATCHES } from '@open-watch-party/shared';
-import path from 'path';
 
 const LOCAL_SERVER_URL = 'http://localhost:8787';
 
@@ -28,11 +27,6 @@ export default defineConfig({
   modules: ['@wxt-dev/module-svelte'],
   vite: () => ({
     plugins: [tailwindcss()],
-    resolve: {
-      alias: {
-        $lib: path.resolve('./src/lib'),
-      },
-    },
     define: {
       __DEFAULT_SERVER_URL__: JSON.stringify(defaultServerUrl),
     },

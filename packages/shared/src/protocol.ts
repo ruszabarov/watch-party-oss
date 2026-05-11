@@ -8,13 +8,6 @@ export const MAX_PLAYBACK_POSITION_SEC = 48 * 60 * 60;
 
 const CONTROL_CHARACTERS_PATTERN = /\p{Cc}+/gu;
 
-export type ConnectionStatus =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'error';
-
 export interface PartyMember {
   id: string;
   name: string;
@@ -91,10 +84,6 @@ export const playbackDraftSchema = z.object({
 
 export const playbackStateInputSchema = playbackDraftSchema.omit({ serviceId: true });
 
-export const playbackUpdateSchema = playbackDraftSchema.extend({
-  clientSequence: z.number().int().min(0),
-});
-
 export const createRoomRequestSchema = z.object({
   memberId: memberIdSchema,
   memberName: memberNameSchema,
@@ -108,26 +97,18 @@ export const joinRoomRequestSchema = z.object({
   memberName: memberNameSchema,
 });
 
-export const leaveRoomRequestSchema = z.object({}).strict();
-
-export const playbackUpdateRequestSchema = playbackUpdateSchema.strict();
+export const playbackUpdateRequestSchema = playbackDraftSchema.strict();
 
 export type PlaybackStateInput = z.output<typeof playbackStateInputSchema>;
-export type PlaybackUpdate = z.output<typeof playbackUpdateSchema>;
-export type PlaybackUpdateDraft = z.output<typeof playbackDraftSchema>;
+export type PlaybackUpdate = z.output<typeof playbackUpdateRequestSchema>;
 export type CreateRoomRequest = z.output<typeof createRoomRequestSchema>;
 export type JoinRoomRequest = z.output<typeof joinRoomRequestSchema>;
-export type LeaveRoomRequest = z.output<typeof leaveRoomRequestSchema>;
-export type PlaybackUpdateRequest = z.output<typeof playbackUpdateRequestSchema>;
 
 export interface ClientToServerEvents {
   'room:create': (payload: CreateRoomRequest, acknowledge: Acknowledge<RoomResponse>) => void;
   'room:join': (payload: JoinRoomRequest, acknowledge: Acknowledge<RoomResponse>) => void;
-  'room:leave': (payload: LeaveRoomRequest, acknowledge: Acknowledge<{ roomCode: string }>) => void;
-  'playback:update': (
-    payload: PlaybackUpdateRequest,
-    acknowledge: Acknowledge<PartySnapshot>,
-  ) => void;
+  'room:leave': (acknowledge: Acknowledge<{ roomCode: string }>) => void;
+  'playback:update': (payload: PlaybackUpdate, acknowledge: Acknowledge<PartySnapshot>) => void;
 }
 
 export interface ServerToClientEvents {

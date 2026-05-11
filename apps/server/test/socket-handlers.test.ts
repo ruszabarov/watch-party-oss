@@ -65,7 +65,6 @@ const validPlaybackUpdatePayload = {
   title: 'Clip',
   playing: false,
   positionSec: 15,
-  clientSequence: 1,
 };
 
 function createServiceContext() {
@@ -295,7 +294,6 @@ describe('socket handlers', () => {
         title: 'Next clip',
         positionSec: 0,
         playing: false,
-        clientSequence: 2,
       },
       (value) => {
         response = value;
@@ -381,7 +379,6 @@ describe('socket handlers', () => {
       playbackUpdateHandler(
         {
           ...validPlaybackUpdatePayload,
-          clientSequence: index + 1,
         },
         () => undefined,
       );
@@ -391,7 +388,6 @@ describe('socket handlers', () => {
     playbackUpdateHandler(
       {
         ...validPlaybackUpdatePayload,
-        clientSequence: 21,
       },
       (value) => {
         response = value;
@@ -412,7 +408,10 @@ describe('socket handlers', () => {
     expect(joinRoom(guestSocket, room.snapshot.roomCode)).toMatchObject({ ok: true });
 
     let response: OperationResult<{ roomCode: string }> | null = null;
-    getHandler<{ roomCode: string }>(hostSocket, 'room:leave')({}, (value) => {
+    const roomLeaveHandler = hostSocket.handlers.get('room:leave') as (
+      acknowledge: (response: OperationResult<{ roomCode: string }>) => void,
+    ) => void;
+    roomLeaveHandler((value) => {
       response = value;
     });
 

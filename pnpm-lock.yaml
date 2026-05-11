@@ -59,9 +59,6 @@ importers:
       ts-pattern:
         specifier: 'catalog:'
         version: 5.9.0
-      zod:
-        specifier: 'catalog:'
-        version: 4.4.1
     devDependencies:
       '@internationalized/date':
         specifier: ^3.12.1
@@ -138,12 +135,6 @@ importers:
       socket.io:
         specifier: ^4.8.3
         version: 4.8.3
-      ts-pattern:
-        specifier: 'catalog:'
-        version: 5.9.0
-      zod:
-        specifier: 'catalog:'
-        version: 4.4.1
 
   packages/shared:
     dependencies:

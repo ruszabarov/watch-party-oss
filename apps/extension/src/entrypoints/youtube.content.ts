@@ -1,4 +1,4 @@
-import { runServiceContentScript } from '../utils/services/dom-video';
-import { YOUTUBE_SERVICE } from '../utils/services/youtube';
+import { runServiceContentScript } from '../services/dom-video';
+import { YOUTUBE_SERVICE } from '../services/youtube';
 
 export default runServiceContentScript('youtube', YOUTUBE_SERVICE);
