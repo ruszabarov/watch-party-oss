@@ -94,10 +94,11 @@ Adding a streaming service starts in `packages/shared/src/streaming-services.ts`
 which owns the streaming service ID, display metadata, URL parsing, canonical
 watch URL builder, and extension match patterns.
 
-Then add the extension-only DOM integration under
-`apps/extension/src/streaming-services/<id>.ts`, add a one-line
-`runStreamingServiceContentScript(MY_STREAMING_SERVICE)` entrypoint, and
-register the integration in `STREAMING_SERVICE_INTEGRATION_BY_ID`.
+Then add the extension-only implementation under
+`apps/extension/src/streaming-services/<id>/`, exporting a
+`runMyStreamingServiceContentScript()` function from
+`content-script.ts`. Wire it up by calling `defineContentScript` from
+`apps/extension/src/entrypoints/<id>.content.ts`.
 
 Issues and pull requests for new streaming services, bug fixes, documentation,
 and store listing improvements are welcome.

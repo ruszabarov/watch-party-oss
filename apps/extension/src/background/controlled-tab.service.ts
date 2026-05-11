@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import type { PartySnapshot, PlaybackUpdate } from '@open-watch-party/shared';
 import type { ApplySnapshotResult, WatchPageContext } from '../messaging';
 import { sendMessage } from '../messaging';
-import { getStreamingServiceIntegration } from '../streaming-services/integrations';
+import { getStreamingServiceDefinition } from '../streaming-services/catalog';
 import type { BackgroundState, BackgroundStore } from './state';
 
 interface ControllableWatchTabState {
@@ -11,10 +11,10 @@ interface ControllableWatchTabState {
 }
 
 function isStreamingServiceUrl(
-  integration: { matchesUrl(url: URL): boolean },
+  definition: { matchesUrl(url: URL): boolean },
   rawUrl: string,
 ): boolean {
-  return URL.canParse(rawUrl) && integration.matchesUrl(new URL(rawUrl));
+  return URL.canParse(rawUrl) && definition.matchesUrl(new URL(rawUrl));
 }
 
 function roomMatchesContext(
@@ -41,7 +41,7 @@ export class ControlledTabService {
       if (tabId === controlledTab?.tabId && tab.url) {
         const session = this.state.session;
         const sessionStreamingService = session
-          ? getStreamingServiceIntegration(session.streamingServiceId)
+          ? getStreamingServiceDefinition(session.streamingServiceId)
           : null;
         if (sessionStreamingService && !isStreamingServiceUrl(sessionStreamingService, tab.url)) {
           this.store.trigger.setLastWarning({
@@ -99,7 +99,7 @@ export class ControlledTabService {
 
     const session = this.state.session;
     const sessionStreamingService = session
-      ? getStreamingServiceIntegration(session.streamingServiceId)
+      ? getStreamingServiceDefinition(session.streamingServiceId)
       : null;
 
     if (
@@ -152,15 +152,15 @@ export class ControlledTabService {
       throw new Error('Open a supported watch page before starting a party.');
     }
 
-    const integration = getStreamingServiceIntegration(context.streamingServiceId);
-    if (!integration) {
+    const definition = getStreamingServiceDefinition(context.streamingServiceId);
+    if (!definition) {
       throw new Error('This tab is not on a supported streaming service.');
     }
 
     const playback = await this.requestPlaybackFromTab(tabId);
 
     if (!playback || playback.mediaId !== context.mediaId) {
-      throw new Error(`${integration.descriptor.label} playback state is not ready yet.`);
+      throw new Error(`${definition.descriptor.label} playback state is not ready yet.`);
     }
 
     return { context, playback };

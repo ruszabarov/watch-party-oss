@@ -1,4 +1,4 @@
-import type { ApplySnapshotResult } from '../messaging';
+import type { ApplySnapshotResult } from '../../messaging';
 
 export const NETFLIX_PLAYER_REQUEST_SOURCE = 'open-watch-party:netflix-player-request';
 export const NETFLIX_PLAYER_RESPONSE_SOURCE = 'open-watch-party:netflix-player-response';

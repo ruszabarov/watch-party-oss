@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isYoutubeAdPlayback } from '../../src/streaming-services/youtube';
+import { isYoutubeAdPlayback } from '../../src/streaming-services/youtube/ads';
 
 describe('isYoutubeAdPlayback', () => {
   it('treats normal YouTube player state as syncable content playback', () => {
