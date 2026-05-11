@@ -1,10 +1,7 @@
 import {
   NETFLIX_PLAYER_REQUEST_SOURCE,
-  NETFLIX_PLAYER_RESPONSE_SOURCE,
   type NetflixPlayerCommand,
-  type NetflixPlayerResponse,
   type NetflixRpcRequest,
-  type NetflixRpcResponse,
 } from './player-rpc';
 import type { NetflixPlayer } from './window';
 
@@ -14,15 +11,10 @@ function getNetflixPlayer(): NetflixPlayer | null {
   return sessionId ? (videoPlayer?.getVideoPlayerBySessionId(sessionId) ?? null) : null;
 }
 
-function applyCommand(command: NetflixPlayerCommand): NetflixPlayerResponse {
+function applyCommand(command: NetflixPlayerCommand): void {
   try {
     const player = getNetflixPlayer();
-    if (!player) {
-      return {
-        applied: false,
-        reason: 'Netflix player API is not ready yet.',
-      };
-    }
+    if (!player) return;
 
     if (command.positionMs !== undefined) {
       player.seek(command.positionMs);
@@ -33,13 +25,8 @@ function applyCommand(command: NetflixPlayerCommand): NetflixPlayerResponse {
     } else {
       player.pause();
     }
-
-    return { applied: true };
   } catch {
-    return {
-      applied: false,
-      reason: 'Netflix player API rejected the sync command.',
-    };
+    // Netflix player API rejected the command; nothing we can do here.
   }
 }
 
@@ -50,17 +37,10 @@ export function runNetflixPlayerContentScript(): void {
     }
 
     const data = event.data as Partial<NetflixRpcRequest> | null;
-    if (data?.source !== NETFLIX_PLAYER_REQUEST_SOURCE || !data.id || !data.command) {
+    if (data?.source !== NETFLIX_PLAYER_REQUEST_SOURCE || !data.command) {
       return;
     }
 
-    window.postMessage(
-      {
-        source: NETFLIX_PLAYER_RESPONSE_SOURCE,
-        id: data.id,
-        response: applyCommand(data.command),
-      } satisfies NetflixRpcResponse,
-      '*',
-    );
+    applyCommand(data.command);
   });
 }

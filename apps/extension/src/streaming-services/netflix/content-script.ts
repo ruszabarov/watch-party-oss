@@ -2,52 +2,28 @@ import { STREAMING_SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
 import type { PlaybackUpdate } from '@open-watch-party/shared';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
-import type { ApplySnapshotResult, WatchPageContext } from '../../messaging';
+import type { WatchPageContext } from '../../messaging';
 import { onMessage, sendMessage } from '../../messaging';
 import {
   NETFLIX_PLAYER_REQUEST_SOURCE,
-  NETFLIX_PLAYER_RESPONSE_SOURCE,
   type NetflixPlayerCommand,
   type NetflixRpcRequest,
-  type NetflixRpcResponse,
 } from './player-rpc';
 
 const NETFLIX = STREAMING_SERVICE_DEFINITION_BY_ID.netflix;
 const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'ended'] as const;
 const SEEK_THRESHOLD_SEC = 5;
 const SUPPRESSION_MS = 750;
-const PLAYER_RESPONSE_TIMEOUT_MS = 1500;
 
 function getMediaTitle(): string {
   return document.title.replace(/\s*-\s*Netflix$/i, '').trim() || 'Netflix';
 }
 
-function sendPlayerCommand(command: NetflixPlayerCommand): Promise<ApplySnapshotResult> {
-  const id = crypto.randomUUID();
-
-  return new Promise((resolve) => {
-    const timeout = window.setTimeout(() => {
-      window.removeEventListener('message', handleResponse);
-      resolve({ applied: false, reason: 'Netflix player API is not ready yet.' });
-    }, PLAYER_RESPONSE_TIMEOUT_MS);
-
-    function handleResponse(event: MessageEvent) {
-      if (event.source !== window) return;
-      const data = event.data as Partial<NetflixRpcResponse> | null;
-      if (data?.source !== NETFLIX_PLAYER_RESPONSE_SOURCE || data.id !== id || !data.response) {
-        return;
-      }
-      window.clearTimeout(timeout);
-      window.removeEventListener('message', handleResponse);
-      resolve(data.response);
-    }
-
-    window.addEventListener('message', handleResponse);
-    window.postMessage(
-      { source: NETFLIX_PLAYER_REQUEST_SOURCE, id, command } satisfies NetflixRpcRequest,
-      '*',
-    );
-  });
+function sendPlayerCommand(command: NetflixPlayerCommand): void {
+  window.postMessage(
+    { source: NETFLIX_PLAYER_REQUEST_SOURCE, command } satisfies NetflixRpcRequest,
+    '*',
+  );
 }
 
 export function runNetflixContentScript(ctx: ContentScriptContext): void {
@@ -67,6 +43,7 @@ export function runNetflixContentScript(ctx: ContentScriptContext): void {
     if (!context || !activeVideo) return null;
     return {
       ...context,
+      title: getMediaTitle(),
       positionSec: Number(activeVideo.currentTime.toFixed(3)),
       playing: !activeVideo.paused,
     };
@@ -122,10 +99,8 @@ export function runNetflixContentScript(ctx: ContentScriptContext): void {
   ctx.onInvalidated(onMessage('party:request-playback', () => readPlayback()));
 
   ctx.onInvalidated(
-    onMessage('party:apply-snapshot', async ({ data }) => {
-      if (!activeVideo || !readContext()) {
-        return { applied: false, reason: 'Netflix player is still loading.' };
-      }
+    onMessage('party:apply-snapshot', ({ data }) => {
+      if (!activeVideo || !readContext()) return;
 
       suppressUntil = performance.now() + SUPPRESSION_MS;
 
@@ -135,13 +110,7 @@ export function runNetflixContentScript(ctx: ContentScriptContext): void {
           ? { playing, positionMs: Math.round(positionSec * 1000) }
           : { playing };
 
-      const result = await sendPlayerCommand(command).catch(() => ({
-        applied: false as const,
-        reason: 'Sync failed on this tab.',
-      }));
-
-      if (result.applied) suppressUntil = performance.now() + SUPPRESSION_MS;
-      return result;
+      sendPlayerCommand(command);
     }),
   );
 

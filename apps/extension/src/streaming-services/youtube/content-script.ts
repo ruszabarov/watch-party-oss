@@ -10,7 +10,6 @@ const YOUTUBE = STREAMING_SERVICE_DEFINITION_BY_ID.youtube;
 const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'ended'] as const;
 const SEEK_THRESHOLD_SEC = 1.5;
 const SUPPRESSION_MS = 750;
-const AD_REASON = 'YouTube is showing an ad. Sync will resume when the video returns.';
 
 function getMediaTitle(): string {
   return document.title.replace(/\s*-\s*YouTube$/i, '').trim();
@@ -121,13 +120,9 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
   ctx.onInvalidated(onMessage('party:request-playback', () => readPlayback()));
 
   ctx.onInvalidated(
-    onMessage('party:apply-snapshot', async ({ data }) => {
-      if (!activeVideo || !readContext()) {
-        return { applied: false, reason: 'YouTube player is still loading.' };
-      }
-      if (isAdShowing(activePlayer)) {
-        return { applied: false, reason: AD_REASON };
-      }
+    onMessage('party:apply-snapshot', ({ data }) => {
+      if (!activeVideo || !readContext()) return;
+      if (isAdShowing(activePlayer)) return;
 
       suppressUntil = performance.now() + SUPPRESSION_MS;
 
@@ -136,16 +131,10 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
         activeVideo.currentTime = positionSec;
       }
       if (playing && activeVideo.paused) {
-        try {
-          await activeVideo.play();
-        } catch {
-          return { applied: false, reason: 'Browser blocked playback start on this tab.' };
-        }
+        void activeVideo.play().catch(() => undefined);
+      } else if (!playing && !activeVideo.paused) {
+        activeVideo.pause();
       }
-      if (!playing && !activeVideo.paused) activeVideo.pause();
-
-      suppressUntil = performance.now() + SUPPRESSION_MS;
-      return { applied: true };
     }),
   );
 

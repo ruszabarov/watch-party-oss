@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { PartySnapshot, PlaybackUpdate } from '@open-watch-party/shared';
-import type { ApplySnapshotResult, WatchPageContext } from '../messaging';
+import type { WatchPageContext } from '../messaging';
 import { sendMessage } from '../messaging';
 import { getStreamingServiceDefinition } from '../streaming-services/catalog';
 import type { BackgroundState, BackgroundStore } from './state';
@@ -66,7 +66,7 @@ export class ControlledTabService {
 
     const controlledTab = this.state.controlledTab;
     if (!controlledTab) {
-      await this.adoptTabForRoom(tabId, context, room);
+      this.adoptTabForRoom(tabId, context, room);
       return;
     }
 
@@ -93,14 +93,7 @@ export class ControlledTabService {
   async applySnapshotToControlledTab(): Promise<void> {
     const room = this.state.room;
     const controlledTab = this.state.controlledTab;
-    if (!room || !controlledTab) {
-      return;
-    }
-
-    const session = this.state.session;
-    const sessionStreamingService = session
-      ? getStreamingServiceDefinition(session.streamingServiceId)
-      : null;
+    if (!room || !controlledTab) return;
 
     if (
       controlledTab.context.streamingServiceId !== room.streamingServiceId ||
@@ -110,20 +103,10 @@ export class ControlledTabService {
       return;
     }
 
-    const result = await this.applySnapshotToTab(controlledTab.tabId, room);
-
-    if (!result) {
-      this.store.trigger.setLastWarning({
-        message: sessionStreamingService
-          ? `${sessionStreamingService.descriptor.label} tab is not ready for sync yet.`
-          : 'Controlled tab is not ready for sync yet.',
-      });
-      return;
-    }
-
-    this.store.trigger.setLastWarning({
-      message: result.applied ? null : (result.reason ?? 'Sync was skipped.'),
-    });
+    void sendMessage('party:apply-snapshot', room, { tabId: controlledTab.tabId }).catch(
+      () => undefined,
+    );
+    this.store.trigger.setLastWarning({ message: null });
   }
 
   async navigateControlledTabToRoom(tabId: number, watchUrl: string, active = true): Promise<void> {
@@ -184,38 +167,15 @@ export class ControlledTabService {
     }
   }
 
-  private async applySnapshotToTab(
-    tabId: number,
-    snapshot: PartySnapshot,
-  ): Promise<ApplySnapshotResult | null> {
-    try {
-      const response = await sendMessage('party:apply-snapshot', snapshot, { tabId });
-      return response ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  private async adoptTabForRoom(
+  private adoptTabForRoom(
     tabId: number,
     context: WatchPageContext,
     room: PartySnapshot | undefined,
-  ): Promise<void> {
-    if (!roomMatchesContext(room, context)) {
-      return;
-    }
+  ): void {
+    if (!roomMatchesContext(room, context) || this.state.controlledTab) return;
 
-    const result = await this.applySnapshotToTab(tabId, room);
-    const latestRoom = this.state.room;
-    if (!roomMatchesContext(latestRoom, context) || this.state.controlledTab) {
-      return;
-    }
-
+    void sendMessage('party:apply-snapshot', room, { tabId }).catch(() => undefined);
     this.store.trigger.setControlledTab({ tabId, context });
-    this.store.trigger.setLastWarning({
-      message: result?.applied
-        ? null
-        : (result?.reason ?? 'Controlled tab is not ready for sync yet.'),
-    });
+    this.store.trigger.setLastWarning({ message: null });
   }
 }

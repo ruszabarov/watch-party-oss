@@ -9,8 +9,6 @@ export interface WatchPageContext {
   title?: string;
 }
 
-export type ApplySnapshotResult = { applied: true } | { applied: false; reason?: string };
-
 export interface CreateRoomRequest {
   tabId: number;
 }
@@ -25,7 +23,7 @@ export interface ExtensionProtocolMap {
   'content:playback-update': (payload: PlaybackUpdate) => void;
   'party:request-context': () => WatchPageContext | null;
   'party:request-playback': () => PlaybackUpdate | null;
-  'party:apply-snapshot': (payload: PartySnapshot) => ApplySnapshotResult;
+  'party:apply-snapshot': (payload: PartySnapshot) => void;
   'popup:get-state': () => BackgroundState;
   'popup:create-room': (payload: CreateRoomRequest) => BackgroundState;
   'popup:join-room': (payload: JoinRoomRequest) => BackgroundState;
