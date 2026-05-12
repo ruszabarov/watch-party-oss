@@ -14,8 +14,6 @@
     "limiter": "^3.0.0",
     "lru-cache": "^11.3.5",
     "pino": "catalog:",
-    "socket.io": "^4.8.3",
-    "ts-pattern": "catalog:",
-    "zod": "catalog:"
+    "socket.io": "^4.8.3"
   }
 }

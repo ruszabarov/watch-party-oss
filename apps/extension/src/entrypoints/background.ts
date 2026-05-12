@@ -1,65 +1,70 @@
 import { defineBackground } from 'wxt/utils/define-background';
 
-import { getErrorMessage } from '$lib/errors.js';
-import { onMessage } from '../utils/protocol/messaging';
-import { PartySessionService } from '../utils/background/party-session-service';
-import { SettingsStore } from '../utils/background/settings-store';
-import { createSyncedBackgroundStore, type BackgroundStore } from '../utils/background/state';
-import { ControlledTabService } from '../utils/background/controlled-tab-service';
+import { getErrorMessage } from '~/utils/errors.js';
+import { ControlledTabService } from '../background/controlled-tab.service';
+import { PartySessionService } from '../background/party-session.service';
+import { backgroundStore, type BackgroundState } from '../background/state';
+import { onMessage } from '../messaging';
 
 export default defineBackground(() => {
-  const store = createSyncedBackgroundStore();
-  const settingsStore = new SettingsStore(store);
-  const controlledTabService = new ControlledTabService(store);
-  const partySessionService = new PartySessionService(store, settingsStore);
-  const controller = new BackgroundController(
-    store,
-    settingsStore,
-    controlledTabService,
-    partySessionService,
-  );
+  const controlledTabService = new ControlledTabService();
+  const partySessionService = new PartySessionService();
+  const controller = new BackgroundController(controlledTabService, partySessionService);
 
   controller.start();
 });
 
 class BackgroundController {
   constructor(
-    private readonly store: BackgroundStore,
-    private readonly settingsStore: SettingsStore,
     private readonly controlledTabService: ControlledTabService,
     private readonly partySessionService: PartySessionService,
   ) {}
 
   start(): void {
-    this.store.on('roomSnapshotChanged', () => {
+    backgroundStore.on('roomSnapshotChanged', () => {
       this.applyRoomSnapshotToControlledTab();
     });
-    this.store.on('controlledTabMediaSwitchRequested', ({ context }) => {
-      this.partySessionService.updateRoomMediaFromControlledTab(context);
+    backgroundStore.on('controlledTabMediaSwitchRequested', ({ mediaId }) => {
+      this.partySessionService.updateRoomMediaFromControlledTab(mediaId);
+    });
+    backgroundStore.on('controlledTabClosed', () => {
+      this.leaveRoomAfterControlledTabClosed();
     });
 
     this.registerContentHandlers();
     this.registerPopupHandlers();
     this.controlledTabService.registerEventHandlers();
-
-    void this.restoreStoredSession();
   }
 
   private applyRoomSnapshotToControlledTab(): void {
     void this.controlledTabService.applySnapshotToControlledTab().catch((error) => {
-      this.store.trigger.reportError({ message: getErrorMessage(error) });
+      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
     });
   }
 
-  private async runPopupAction(action: () => Promise<void>): Promise<void> {
+  private leaveRoomAfterControlledTabClosed(): void {
+    void this.partySessionService.leaveRoom().catch(() => {
+      // Best effort; closing a controlled tab should not surface a user-facing error.
+    });
+  }
+
+  private getState(): BackgroundState {
+    return backgroundStore.getSnapshot().context;
+  }
+
+  private async runPopupAction(action: () => Promise<void>): Promise<BackgroundState> {
     try {
       await action();
     } catch (error) {
-      this.store.trigger.reportError({ message: getErrorMessage(error) });
+      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
     }
+
+    return this.getState();
   }
 
   private registerPopupHandlers(): void {
+    onMessage('popup:get-state', () => this.getState());
+
     onMessage('popup:create-room', ({ data }) =>
       this.runPopupAction(() => this.createRoomFromTab(data.tabId)),
     );
@@ -71,16 +76,12 @@ class BackgroundController {
     onMessage('popup:leave-room', () =>
       this.runPopupAction(() => this.partySessionService.leaveRoom()),
     );
-
-    onMessage('popup:update-settings', ({ data }) =>
-      this.runPopupAction(() => this.settingsStore.updateSettings(data)),
-    );
   }
 
   private async createRoomFromTab(tabId: number): Promise<void> {
-    const { context, playback } =
+    const { streamingServiceId, playback } =
       await this.controlledTabService.requireControllableWatchTab(tabId);
-    await this.partySessionService.createRoom(tabId, context, playback);
+    await this.partySessionService.createRoom(tabId, streamingServiceId, playback);
   }
 
   private async joinRoomFromTab(roomCode: string, tabId: number): Promise<void> {
@@ -96,15 +97,10 @@ class BackgroundController {
     }
   }
 
-  private async restoreStoredSession(): Promise<void> {
-    await this.settingsStore.hydrate();
-    await this.partySessionService.connectForStoredSession();
-  }
-
   private registerContentHandlers(): void {
-    onMessage('content:context', async ({ data, sender }) => {
+    onMessage('content:context', async ({ data: mediaId, sender }) => {
       if (sender.tab?.id !== undefined) {
-        await this.controlledTabService.handleContentContext(sender.tab.id, data);
+        await this.controlledTabService.handleContentContext(sender.tab.id, mediaId);
       }
     });
 

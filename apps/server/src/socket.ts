@@ -2,14 +2,13 @@ import { Server, type Socket } from 'socket.io';
 import {
   createRoomRequestSchema,
   joinRoomRequestSchema,
-  leaveRoomRequestSchema,
   playbackUpdateRequestSchema,
   type ClientToServerEvents,
   type CreateRoomRequest,
   type JoinRoomRequest,
   type OperationResult,
   type PartySnapshot,
-  type PlaybackUpdateRequest,
+  type PlaybackUpdate,
   type RoomResponse,
   type ServerToClientEvents,
 } from '@open-watch-party/shared';
@@ -85,10 +84,8 @@ export class RealtimeSocketService {
       );
     });
 
-    socket.on('room:leave', (payload, acknowledge) => {
-      this.handleAcknowledgedRequest(payload, acknowledge, leaveRoomRequestSchema, () =>
-        this.leaveCurrentRoom(socket),
-      );
+    socket.on('room:leave', (acknowledge) => {
+      acknowledgeResult(acknowledge, () => this.leaveCurrentRoom(socket));
     });
 
     socket.on('playback:update', (payload, acknowledge) => {
@@ -209,7 +206,7 @@ export class RealtimeSocketService {
 
   private updatePlayback(
     socket: ConnectionSocket,
-    payload: PlaybackUpdateRequest,
+    payload: PlaybackUpdate,
   ): OperationResult<PartySnapshot> {
     const session = this.sessions.get(socket.id);
     if (!session) {
@@ -225,9 +222,7 @@ export class RealtimeSocketService {
       return result;
     }
 
-    if (result.data.changed) {
-      socket.to(result.data.roomCode).emit('playback:state', result.data.snapshot);
-    }
+    socket.to(result.data.roomCode).emit('playback:state', result.data.snapshot);
 
     return success(result.data.snapshot);
   }

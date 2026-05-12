@@ -1,19 +1,12 @@
 import { z } from 'zod';
-import { isServiceId, type ServiceId } from './services';
-export type { ServiceId } from './services';
+import { isStreamingServiceId, type StreamingServiceId } from './streaming-services';
+export type { StreamingServiceId } from './streaming-services';
 
 export const MAX_MEMBER_NAME_LENGTH = 64;
 export const MAX_TITLE_LENGTH = 256;
 export const MAX_PLAYBACK_POSITION_SEC = 48 * 60 * 60;
 
 const CONTROL_CHARACTERS_PATTERN = /\p{Cc}+/gu;
-
-export type ConnectionStatus =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'error';
 
 export interface PartyMember {
   id: string;
@@ -22,7 +15,7 @@ export interface PartyMember {
 }
 
 export interface PlaybackState {
-  serviceId: ServiceId;
+  streamingServiceId: StreamingServiceId;
   mediaId: string;
   title?: string;
   playing: boolean;
@@ -34,7 +27,7 @@ export interface PlaybackState {
 
 export interface PartySnapshot {
   roomCode: string;
-  serviceId: ServiceId;
+  streamingServiceId: StreamingServiceId;
   watchUrl: string;
   members: PartyMember[];
   playback: PlaybackState;
@@ -70,9 +63,9 @@ const roomCodeSchema = z
   .pipe(z.string().min(1));
 const memberIdSchema = z.string().trim().min(1);
 const mediaIdSchema = z.string().trim().min(1);
-const serviceIdSchema = z.custom<ServiceId>(
-  (value) => typeof value === 'string' && isServiceId(value),
-  { message: 'Unsupported service id' },
+const streamingServiceIdSchema = z.custom<StreamingServiceId>(
+  (value) => typeof value === 'string' && isStreamingServiceId(value),
+  { message: 'Unsupported streaming service id' },
 );
 const positionSchema = z.number().min(0).max(MAX_PLAYBACK_POSITION_SEC);
 const memberNameSchema = z.string().transform(sanitizeMemberName);
@@ -82,23 +75,18 @@ const titleSchema = z
   .transform((value) => sanitizeOptionalTitle(value));
 
 export const playbackDraftSchema = z.object({
-  serviceId: serviceIdSchema,
   mediaId: mediaIdSchema,
   title: titleSchema,
   positionSec: positionSchema,
   playing: z.boolean(),
 });
 
-export const playbackStateInputSchema = playbackDraftSchema.omit({ serviceId: true });
-
-export const playbackUpdateSchema = playbackDraftSchema.extend({
-  clientSequence: z.number().int().min(0),
-});
+export const playbackStateInputSchema = playbackDraftSchema;
 
 export const createRoomRequestSchema = z.object({
   memberId: memberIdSchema,
   memberName: memberNameSchema,
-  serviceId: serviceIdSchema,
+  streamingServiceId: streamingServiceIdSchema,
   initialPlayback: playbackStateInputSchema,
 });
 
@@ -108,26 +96,18 @@ export const joinRoomRequestSchema = z.object({
   memberName: memberNameSchema,
 });
 
-export const leaveRoomRequestSchema = z.object({}).strict();
-
-export const playbackUpdateRequestSchema = playbackUpdateSchema.strict();
+export const playbackUpdateRequestSchema = playbackDraftSchema.strict();
 
 export type PlaybackStateInput = z.output<typeof playbackStateInputSchema>;
-export type PlaybackUpdate = z.output<typeof playbackUpdateSchema>;
-export type PlaybackUpdateDraft = z.output<typeof playbackDraftSchema>;
+export type PlaybackUpdate = z.output<typeof playbackUpdateRequestSchema>;
 export type CreateRoomRequest = z.output<typeof createRoomRequestSchema>;
 export type JoinRoomRequest = z.output<typeof joinRoomRequestSchema>;
-export type LeaveRoomRequest = z.output<typeof leaveRoomRequestSchema>;
-export type PlaybackUpdateRequest = z.output<typeof playbackUpdateRequestSchema>;
 
 export interface ClientToServerEvents {
   'room:create': (payload: CreateRoomRequest, acknowledge: Acknowledge<RoomResponse>) => void;
   'room:join': (payload: JoinRoomRequest, acknowledge: Acknowledge<RoomResponse>) => void;
-  'room:leave': (payload: LeaveRoomRequest, acknowledge: Acknowledge<{ roomCode: string }>) => void;
-  'playback:update': (
-    payload: PlaybackUpdateRequest,
-    acknowledge: Acknowledge<PartySnapshot>,
-  ) => void;
+  'room:leave': (acknowledge: Acknowledge<{ roomCode: string }>) => void;
+  'playback:update': (payload: PlaybackUpdate, acknowledge: Acknowledge<PartySnapshot>) => void;
 }
 
 export interface ServerToClientEvents {

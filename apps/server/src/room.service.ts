@@ -7,7 +7,7 @@ import {
   type JoinRoomRequest,
   type OperationResult,
   type PartySnapshot,
-  type PlaybackUpdateRequest,
+  type PlaybackUpdate,
   type RoomResponse,
   type RoomState,
   toPartySnapshot,
@@ -26,7 +26,6 @@ export type RoomLeaveResult = {
 export type PlaybackUpdateResult = {
   readonly roomCode: string;
   readonly snapshot: PartySnapshot;
-  readonly changed: boolean;
 };
 
 export type RoomServiceOptions = {
@@ -142,7 +141,7 @@ export class RoomService {
   updatePlayback(
     roomCodeValue: string,
     memberId: string,
-    payload: PlaybackUpdateRequest,
+    payload: PlaybackUpdate,
   ): OperationResult<PlaybackUpdateResult> {
     const room = this.roomStore.get(normalizeRoomCode(roomCodeValue));
     if (!room) {
@@ -153,27 +152,8 @@ export class RoomService {
       return failure('Member is not part of this room.');
     }
 
-    if (payload.serviceId !== room.serviceId) {
-      return failure('Service mismatch.');
-    }
-
-    const previousPlayback = room.playback;
     const playback = applyPlaybackUpdate(room, payload, memberId);
     const snapshot = toPartySnapshot(room);
-
-    if (playback === previousPlayback) {
-      log.debug(
-        {
-          roomCode: room.roomCode,
-          memberId,
-          mediaId: payload.mediaId,
-          clientSequence: payload.clientSequence,
-          roomSequence: room.sequence,
-        },
-        'playback:update_noop',
-      );
-      return success({ roomCode: room.roomCode, snapshot, changed: false });
-    }
 
     this.roomStore.set(room);
     log.debug(
@@ -184,11 +164,10 @@ export class RoomService {
         playing: playback.playing,
         positionSec: playback.positionSec,
         playbackSequence: playback.sequence,
-        clientSequence: payload.clientSequence,
       },
       'playback:update_ok',
     );
 
-    return success({ roomCode: room.roomCode, snapshot, changed: true });
+    return success({ roomCode: room.roomCode, snapshot });
   }
 }

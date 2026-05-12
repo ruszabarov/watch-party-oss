@@ -1,4 +1,9 @@
-import { runServiceContentScript } from '../utils/services/dom-video';
-import { NETFLIX_SERVICE } from '../utils/services/netflix';
+import { STREAMING_SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
+import { defineContentScript } from 'wxt/utils/define-content-script';
 
-export default runServiceContentScript('netflix', NETFLIX_SERVICE);
+import { runNetflixContentScript } from '../streaming-services/netflix/content-script';
+
+export default defineContentScript({
+  matches: [...STREAMING_SERVICE_DEFINITION_BY_ID.netflix.contentMatches],
+  main: runNetflixContentScript,
+});

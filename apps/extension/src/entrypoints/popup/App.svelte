@@ -1,25 +1,31 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import {
-        backgroundStateItem,
-        type BackgroundState,
-    } from "../../utils/background/state";
+    import type { BackgroundState } from "../../background/state";
+    import { sendMessage } from "../../messaging";
+    import { getSettings, type Settings } from "../../storage/settings";
     import {
         queryActiveTabSummary,
         type ActiveTabSummary,
-    } from "$lib/active-tab.js";
-    import { getErrorMessage } from "$lib/errors.js";
-    import Notice from "$lib/components/popup/Notice.svelte";
+    } from "./active-tab.js";
+    import { getErrorMessage } from "~/utils/errors.js";
+    import Notice from "~/components/popup/Notice.svelte";
     import PopupContent from "./PopupContent.svelte";
 
     let backgroundState: BackgroundState | undefined = $state();
+    let settings: Settings | undefined = $state();
     let activeTab: ActiveTabSummary | undefined = $state();
     let activeTabError: string | null = $state(null);
 
     onMount(() => {
-        queryActiveTabSummary()
-            .then((summary) => {
+        Promise.all([
+            queryActiveTabSummary(),
+            sendMessage("popup:get-state", undefined),
+            getSettings(),
+        ])
+            .then(([summary, state, storedSettings]) => {
                 activeTab = summary;
+                backgroundState = state;
+                settings = storedSettings;
             })
             .catch((error) => {
                 activeTabError = getErrorMessage(
@@ -28,23 +34,11 @@
                 );
             });
     });
-
-    onMount(() => {
-        const unwatch = backgroundStateItem.watch((newValue) => {
-            backgroundState = newValue;
-        });
-
-        backgroundStateItem.getValue().then((value) => {
-            backgroundState = value;
-        });
-
-        return () => unwatch();
-    });
 </script>
 
 <div class="flex w-90 flex-col overflow-hidden bg-muted/40 text-foreground">
-    {#if backgroundState && activeTab}
-        <PopupContent {backgroundState} {activeTab} />
+    {#if backgroundState && settings && activeTab}
+        <PopupContent {backgroundState} {settings} {activeTab} />
     {:else if activeTabError}
         <main class="p-3">
             <Notice kind="error" message={activeTabError} />

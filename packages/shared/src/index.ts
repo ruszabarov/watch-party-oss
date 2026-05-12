@@ -1,3 +1,3 @@
 export * from './protocol';
 export * from './room';
-export * from './services';
+export * from './streaming-services';
