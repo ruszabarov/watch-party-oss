@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { untrack } from "svelte";
     import type { BackgroundState } from "../../background/state";
     import { sendMessage } from "../../messaging";
     import {
@@ -25,31 +24,27 @@
 
     const { backgroundState, settings, activeTab }: Props = $props();
 
-    let currentBackgroundState: BackgroundState = $state(
-        untrack(() => backgroundState),
-    );
-    let currentSettings: StoredSettings = $state(untrack(() => settings));
     let commandError: string | null = $state(null);
     let dismissedBackgroundError: string | null = $state(null);
     let dismissedBackgroundWarning: string | null = $state(null);
     let isBusy = $state(false);
     let settingsOpen = $state(false);
 
-    const room = $derived(currentBackgroundState.room);
-    const session = $derived(currentBackgroundState.session);
+    const room = $derived(backgroundState.room);
+    const session = $derived(backgroundState.session);
     const isActiveRoomOnCurrentTab = $derived(
-        currentBackgroundState.controlledTab != null &&
-            currentBackgroundState.controlledTab.tabId === activeTab.tabId,
+        backgroundState.controlledTab != null &&
+            backgroundState.controlledTab.tabId === activeTab.tabId,
     );
     const visibleError = $derived(
         commandError ??
-            (currentBackgroundState.lastError !== dismissedBackgroundError
-                ? currentBackgroundState.lastError
+            (backgroundState.lastError !== dismissedBackgroundError
+                ? backgroundState.lastError
                 : null),
     );
     const visibleWarning = $derived(
-        currentBackgroundState.lastWarning !== dismissedBackgroundWarning
-            ? currentBackgroundState.lastWarning
+        backgroundState.lastWarning !== dismissedBackgroundWarning
+            ? backgroundState.lastWarning
             : null,
     );
     const leaveFirstMessage =
@@ -59,32 +54,31 @@
         commandError = getErrorMessage(error, "Unexpected popup error.");
     }
 
-    function perform(
-        action: () => Promise<BackgroundState>,
+    async function perform(
+        action: () => Promise<void>,
         onSuccess?: () => void,
-    ): void {
+    ): Promise<void> {
         isBusy = true;
 
-        action()
-            .then((nextState) => {
-                currentBackgroundState = nextState;
-                commandError = null;
-                onSuccess?.();
-            })
-            .catch(setLastError)
-            .finally(() => {
-                isBusy = false;
-            });
+        try {
+            await action();
+            commandError = null;
+            onSuccess?.();
+        } catch (error) {
+            setLastError(error);
+        } finally {
+            isBusy = false;
+        }
     }
 
     function handleCreateRoom(): void {
-        perform(() =>
+        void perform(() =>
             sendMessage("popup:create-room", { tabId: activeTab.tabId }),
         );
     }
 
     function handleJoinRoom(roomCode: string): void {
-        perform(() =>
+        void perform(() =>
             sendMessage("popup:join-room", {
                 roomCode,
                 tabId: activeTab.tabId,
@@ -93,14 +87,13 @@
     }
 
     function handleLeaveRoom(): void {
-        perform(() => sendMessage("popup:leave-room", undefined));
+        void perform(() => sendMessage("popup:leave-room", undefined));
     }
 
     function handleSaveSettings(next: StoredSettings): void {
-        perform(
+        void perform(
             async () => {
-                currentSettings = await updateSettings(next);
-                return currentBackgroundState;
+                await updateSettings(next);
             },
             closeSettings,
         );
@@ -108,11 +101,11 @@
 
     function dismissError(): void {
         commandError = null;
-        dismissedBackgroundError = currentBackgroundState.lastError;
+        dismissedBackgroundError = backgroundState.lastError;
     }
 
     function dismissWarning(): void {
-        dismissedBackgroundWarning = currentBackgroundState.lastWarning;
+        dismissedBackgroundWarning = backgroundState.lastWarning;
     }
 
     function toggleSettings(): void {
@@ -131,7 +124,7 @@
     {#if settingsOpen}
         <div class="flex flex-col gap-3">
             <Settings
-                settings={currentSettings}
+                {settings}
                 {isBusy}
                 onSave={handleSaveSettings}
             />
@@ -139,7 +132,7 @@
     {:else}
         <div class="flex flex-col gap-3">
             {#if room}
-                <Room popup={currentBackgroundState} {isBusy} onLeave={handleLeaveRoom} />
+                <Room popup={backgroundState} {isBusy} onLeave={handleLeaveRoom} />
                 {#if !isActiveRoomOnCurrentTab}
                     <Notice kind="warning" message={leaveFirstMessage} />
                 {/if}

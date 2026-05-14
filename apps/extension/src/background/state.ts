@@ -1,6 +1,5 @@
-import { createStore } from '@xstate/store';
-import type { PartySnapshot } from '@open-watch-party/shared';
-import type { StreamingServiceId } from '@open-watch-party/shared';
+import { storage } from '#imports';
+import type { PartySnapshot, StreamingServiceId } from '@open-watch-party/shared';
 
 export type SessionInfo = {
   readonly roomCode: string;
@@ -8,152 +7,115 @@ export type SessionInfo = {
   readonly streamingServiceId: StreamingServiceId;
 };
 
+export type ControlledTabInfo = {
+  readonly tabId: number;
+  readonly mediaId: string;
+};
+
 export type BackgroundState = {
-  readonly session: SessionInfo | undefined;
-  readonly room: PartySnapshot | undefined;
-  readonly controlledTab: {
-    readonly tabId: number;
-    readonly mediaId: string;
-  } | null;
+  readonly session: SessionInfo | null;
+  readonly room: PartySnapshot | null;
+  readonly controlledTab: ControlledTabInfo | null;
   readonly lastError: string | null;
   readonly lastWarning: string | null;
 };
 
-function updateSessionRoom(state: BackgroundState, room: PartySnapshot): BackgroundState {
-  if (!state.session) {
-    return state;
-  }
-
-  return {
-    ...state,
-    session: {
-      ...state.session,
-      roomCode: room.roomCode,
-      streamingServiceId: room.streamingServiceId,
-    },
-    room,
-    lastWarning: null,
-  };
-}
-
-const initialBackgroundState: BackgroundState = {
-  session: undefined,
-  room: undefined,
+export const initialBackgroundState: BackgroundState = {
+  session: null,
+  room: null,
   controlledTab: null,
   lastError: null,
   lastWarning: null,
 };
 
-export const backgroundStore = createStore({
-  context: initialBackgroundState,
-  emits: {
-    controlledTabClosed: () => {},
-    controlledTabMediaSwitchRequested: (_payload: { mediaId: string }) => {},
-    roomSnapshotChanged: () => {},
+export const backgroundStateItem = storage.defineItem<BackgroundState>(
+  'session:watch-party-state',
+  {
+    fallback: initialBackgroundState,
   },
-  on: {
-    setControlledTab: (
-      state,
-      event: {
-        tabId: number;
-        mediaId: string;
-        requestMediaSwitch?: boolean;
+);
+
+export async function getBackgroundState(): Promise<BackgroundState> {
+  return backgroundStateItem.getValue();
+}
+
+export async function setControlledTab(tab: ControlledTabInfo): Promise<void> {
+  return updateBackgroundState((state) => ({
+    ...state,
+    controlledTab: tab,
+  }));
+}
+
+export async function clearControlledTab(): Promise<void> {
+  return updateBackgroundState((state) => ({
+    ...state,
+    controlledTab: null,
+  }));
+}
+
+export async function setJoinedSession(session: SessionInfo, room: PartySnapshot): Promise<void> {
+  return updateBackgroundState((state) => ({
+    ...state,
+    session,
+    room,
+    lastError: null,
+  }));
+}
+
+export async function leaveRoomState(): Promise<void> {
+  return replaceBackgroundState(initialBackgroundState);
+}
+
+export async function updateSessionRoom(room: PartySnapshot): Promise<void> {
+  return updateBackgroundState((state) => {
+    if (!state.session) {
+      return state;
+    }
+
+    return {
+      ...state,
+      session: {
+        ...state.session,
+        roomCode: room.roomCode,
+        streamingServiceId: room.streamingServiceId,
       },
-      enqueue,
-    ): BackgroundState => {
-      if (event.requestMediaSwitch) {
-        enqueue.emit.controlledTabMediaSwitchRequested({ mediaId: event.mediaId });
-      }
-
-      return {
-        ...state,
-        controlledTab: {
-          tabId: event.tabId,
-          mediaId: event.mediaId,
-        },
-      };
-    },
-
-    clearControlledTab: (state): BackgroundState => ({
-      ...state,
-      controlledTab: null,
-    }),
-
-    closeControlledTab: (state, _event, enqueue): BackgroundState => {
-      enqueue.emit.controlledTabClosed();
-
-      return {
-        ...state,
-        controlledTab: null,
-      };
-    },
-
-    setJoinedSession: (
-      state,
-      event: {
-        session: SessionInfo;
-        room: PartySnapshot;
-        applySnapshotToControlledTab?: boolean;
-      },
-      enqueue,
-    ): BackgroundState => {
-      if (event.applySnapshotToControlledTab) {
-        enqueue.emit.roomSnapshotChanged();
-      }
-
-      return {
-        ...state,
-        session: event.session,
-        room: event.room,
-        lastError: null,
-      };
-    },
-
-    setSessionError: (
-      state,
-      event: { message: string; clearSession?: boolean },
-    ): BackgroundState => ({
-      ...state,
-      session: event.clearSession ? undefined : state.session,
-      room: event.clearSession ? undefined : state.room,
-      lastError: event.message,
-    }),
-
-    leaveRoom: (state): BackgroundState => ({
-      ...state,
-      session: undefined,
-      room: undefined,
-      controlledTab: null,
-      lastError: null,
+      room,
       lastWarning: null,
-    }),
+    };
+  });
+}
 
-    updateSessionRoom: (
-      state,
-      event: { room: PartySnapshot; applySnapshotToControlledTab?: boolean },
-      enqueue,
-    ): BackgroundState => {
-      if (event.applySnapshotToControlledTab) {
-        enqueue.emit.roomSnapshotChanged();
-      }
+export async function reportBackgroundError(message: string): Promise<void> {
+  return updateBackgroundState((state) => ({
+    ...state,
+    lastError: message,
+  }));
+}
 
-      return updateSessionRoom(state, event.room);
-    },
+export async function setLastWarning(message: string | null): Promise<void> {
+  return updateBackgroundState((state) => ({
+    ...state,
+    lastWarning: message,
+  }));
+}
 
-    reportError: (state, event: { message: string }): BackgroundState => ({
-      ...state,
-      lastError: event.message,
-    }),
+let backgroundStateWriteQueue = Promise.resolve();
 
-    setLastWarning: (state, event: { message: string | null }): BackgroundState => ({
-      ...state,
-      lastWarning: event.message,
-    }),
-  },
-});
+async function updateBackgroundState(
+  updater: (state: BackgroundState) => BackgroundState,
+): Promise<void> {
+  return enqueueBackgroundStateWrite(async () => {
+    const current = await getBackgroundState();
+    await backgroundStateItem.setValue(updater(current));
+  });
+}
 
-export const backgroundSelectors = {
-  session: backgroundStore.select((s) => s.session),
-  room: backgroundStore.select((s) => s.room),
-  controlledTab: backgroundStore.select((s) => s.controlledTab),
-};
+async function replaceBackgroundState(state: BackgroundState): Promise<void> {
+  return enqueueBackgroundStateWrite(() => backgroundStateItem.setValue(state));
+}
+
+async function enqueueBackgroundStateWrite(write: () => Promise<void>): Promise<void> {
+  const nextWrite = backgroundStateWriteQueue.then(write, write);
+  backgroundStateWriteQueue = nextWrite.catch(() => undefined);
+  return nextWrite;
+}

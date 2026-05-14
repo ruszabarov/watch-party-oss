@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@webext-core/messaging": "^2.3.0",
-    "@xstate/store": "^3.17.3",
     "socket.io-client": "^4.8.3",
     "ts-pattern": "catalog:"
   },

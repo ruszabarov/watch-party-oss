@@ -1,44 +1,51 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import type { PlaybackUpdate } from '@open-watch-party/shared';
 
 import { getErrorMessage } from '~/utils/errors.js';
 import { ControlledTabService } from '../background/controlled-tab.service';
 import { PartySessionService } from '../background/party-session.service';
-import { backgroundStore, type BackgroundState } from '../background/state';
+import { reportBackgroundError } from '../background/state';
 import { onMessage } from '../messaging';
 
 export default defineBackground(() => {
-  const controlledTabService = new ControlledTabService();
-  const partySessionService = new PartySessionService();
-  const controller = new BackgroundController(controlledTabService, partySessionService);
+  const controller = new BackgroundController();
 
   controller.start();
 });
 
 class BackgroundController {
-  constructor(
-    private readonly controlledTabService: ControlledTabService,
-    private readonly partySessionService: PartySessionService,
-  ) {}
+  private readonly partySessionService: PartySessionService;
+  private readonly controlledTabService: ControlledTabService;
+
+  constructor() {
+    this.partySessionService = new PartySessionService({
+      onRoomSnapshotChanged: () => {
+        this.applyRoomSnapshotToControlledTab();
+      },
+    });
+
+    this.controlledTabService = new ControlledTabService({
+      onControlledTabClosed: () => {
+        this.leaveRoomAfterControlledTabClosed();
+      },
+      onControlledTabMediaSwitchRequested: (mediaId) => {
+        this.partySessionService.updateRoomMediaFromControlledTab(mediaId);
+      },
+    });
+  }
 
   start(): void {
-    backgroundStore.on('roomSnapshotChanged', () => {
-      this.applyRoomSnapshotToControlledTab();
-    });
-    backgroundStore.on('controlledTabMediaSwitchRequested', ({ mediaId }) => {
-      this.partySessionService.updateRoomMediaFromControlledTab(mediaId);
-    });
-    backgroundStore.on('controlledTabClosed', () => {
-      this.leaveRoomAfterControlledTabClosed();
-    });
-
     this.registerContentHandlers();
     this.registerPopupHandlers();
     this.controlledTabService.registerEventHandlers();
+    void this.partySessionService.resumeStoredSession().catch((error) => {
+      void reportBackgroundError(getErrorMessage(error));
+    });
   }
 
   private applyRoomSnapshotToControlledTab(): void {
     void this.controlledTabService.applySnapshotToControlledTab().catch((error) => {
-      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
+      void reportBackgroundError(getErrorMessage(error));
     });
   }
 
@@ -48,23 +55,15 @@ class BackgroundController {
     });
   }
 
-  private getState(): BackgroundState {
-    return backgroundStore.getSnapshot().context;
-  }
-
-  private async runPopupAction(action: () => Promise<void>): Promise<BackgroundState> {
+  private async runPopupAction(action: () => Promise<void>): Promise<void> {
     try {
       await action();
     } catch (error) {
-      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
+      await reportBackgroundError(getErrorMessage(error));
     }
-
-    return this.getState();
   }
 
   private registerPopupHandlers(): void {
-    onMessage('popup:get-state', () => this.getState());
-
     onMessage('popup:create-room', ({ data }) =>
       this.runPopupAction(() => this.createRoomFromTab(data.tabId)),
     );
@@ -105,12 +104,18 @@ class BackgroundController {
     });
 
     onMessage('content:playback-update', ({ data, sender }) => {
-      if (
-        sender.tab?.id !== undefined &&
-        this.controlledTabService.isControlledTab(sender.tab.id)
-      ) {
-        this.partySessionService.updateRoomPlaybackFromControlledTab(data);
-      }
+      void this.handlePlaybackUpdateFromContent(sender.tab?.id, data);
     });
+  }
+
+  private async handlePlaybackUpdateFromContent(
+    tabId: number | undefined,
+    data: PlaybackUpdate,
+  ): Promise<void> {
+    if (tabId === undefined || !(await this.controlledTabService.isControlledTab(tabId))) {
+      return;
+    }
+
+    this.partySessionService.updateRoomPlaybackFromControlledTab(data);
   }
 }

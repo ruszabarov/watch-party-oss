@@ -1,7 +1,6 @@
 import { defineExtensionMessaging } from '@webext-core/messaging';
 
 import type { PartySnapshot, PlaybackUpdate } from '@open-watch-party/shared';
-import type { BackgroundState } from './background/state';
 
 export interface CreateRoomRequest {
   tabId: number;
@@ -17,10 +16,9 @@ export interface ExtensionProtocolMap {
   'content:playback-update': (payload: PlaybackUpdate) => void;
   'party:request-playback': () => PlaybackUpdate | null;
   'party:apply-snapshot': (payload: PartySnapshot) => void;
-  'popup:get-state': () => BackgroundState;
-  'popup:create-room': (payload: CreateRoomRequest) => BackgroundState;
-  'popup:join-room': (payload: JoinRoomRequest) => BackgroundState;
-  'popup:leave-room': () => BackgroundState;
+  'popup:create-room': (payload: CreateRoomRequest) => void;
+  'popup:join-room': (payload: JoinRoomRequest) => void;
+  'popup:leave-room': () => void;
 }
 
 export const { onMessage, sendMessage } = defineExtensionMessaging<ExtensionProtocolMap>();

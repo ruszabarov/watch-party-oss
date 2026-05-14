@@ -5,10 +5,13 @@ export interface Settings {
   readonly memberName: string;
 }
 
-const settingsItem = storage.defineItem<Settings>('local:watch-party-settings', {
-  init: () => ({
-    memberName: createGuestName(),
-  }),
+export const initialSettings: Settings = {
+  memberName: 'Guest',
+};
+
+export const settingsItem = storage.defineItem<Settings>('local:watch-party-settings', {
+  fallback: initialSettings,
+  init: createDefaultSettings,
 });
 
 export async function getSettings(): Promise<Settings> {
@@ -22,10 +25,8 @@ export async function getSettings(): Promise<Settings> {
   return settings;
 }
 
-export async function updateSettings(next: Settings): Promise<Settings> {
-  const settings = normalizeSettings(next);
-  await settingsItem.setValue(settings);
-  return settings;
+export async function updateSettings(next: Settings): Promise<void> {
+  await settingsItem.setValue(normalizeSettings(next));
 }
 
 function normalizeSettings(settings: Settings): Settings {
@@ -34,6 +35,8 @@ function normalizeSettings(settings: Settings): Settings {
   };
 }
 
-function createGuestName(): string {
-  return `Guest ${Math.floor(Math.random() * 900 + 100)}`;
+function createDefaultSettings(): Settings {
+  return {
+    memberName: `Guest ${Math.floor(Math.random() * 900 + 100)}`,
+  };
 }

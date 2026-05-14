@@ -14,7 +14,15 @@ import type {
 import { getErrorMessage } from '~/utils/errors.js';
 import { getSettings } from '../storage/settings';
 import { RealtimeConnection } from './connection.service';
-import { backgroundStore, backgroundSelectors } from './state';
+import {
+  getBackgroundState,
+  leaveRoomState,
+  reportBackgroundError,
+  setControlledTab,
+  setJoinedSession,
+  setLastWarning,
+  updateSessionRoom,
+} from './state';
 
 const ACTIVE_ROOM_EXISTS_ERROR = 'Leave your current room before joining or creating another room.';
 const SERVER_URL = __DEFAULT_SERVER_URL__;
@@ -22,16 +30,30 @@ const SERVER_URL = __DEFAULT_SERVER_URL__;
 export class PartySessionService {
   private connection: RealtimeConnection | null = null;
 
+  constructor(
+    private readonly options: {
+      onRoomSnapshotChanged: () => void;
+    },
+  ) {}
+
   updateRoomPlaybackFromControlledTab(update: PlaybackUpdate): void {
     void this.sendPlaybackUpdate(update).catch((error) => {
-      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
+      void reportBackgroundError(getErrorMessage(error));
     });
   }
 
   updateRoomMediaFromControlledTab(mediaId: string): void {
     void this.sendMediaSwitchUpdate(mediaId).catch((error) => {
-      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
+      void reportBackgroundError(getErrorMessage(error));
     });
+  }
+
+  async resumeStoredSession(): Promise<void> {
+    if (!(await getBackgroundState()).session) {
+      return;
+    }
+
+    await this.rejoinRoom();
   }
 
   async createRoom(
@@ -39,28 +61,28 @@ export class PartySessionService {
     streamingServiceId: StreamingServiceId,
     playback: PlaybackUpdate,
   ): Promise<void> {
-    this.assertNoActiveSession();
+    await this.assertNoActiveSession();
 
     const settings = await getSettings();
 
     const response = await this.emitRoomCreate({
-      memberId: this.ensureMemberId(),
+      memberId: await this.ensureMemberId(),
       memberName: settings.memberName,
       streamingServiceId,
       initialPlayback: playback,
     });
 
-    backgroundStore.trigger.setControlledTab({ tabId, mediaId: playback.mediaId });
+    await setControlledTab({ tabId, mediaId: playback.mediaId });
     await this.applyRoomResponse(response, true);
   }
 
   async joinRoom(roomCode: string): Promise<RoomResponse> {
-    this.assertNoActiveSession();
+    await this.assertNoActiveSession();
     const settings = await getSettings();
 
     const response = await this.emitRoomJoin({
       roomCode: normalizeRoomCode(roomCode),
-      memberId: this.ensureMemberId(),
+      memberId: await this.ensureMemberId(),
       memberName: settings.memberName,
     });
 
@@ -69,7 +91,7 @@ export class PartySessionService {
   }
 
   async leaveRoom(): Promise<void> {
-    if (backgroundSelectors.session.get() && this.connection) {
+    if ((await getBackgroundState()).session && this.connection) {
       try {
         await this.emitRoomLeave();
       } catch {
@@ -78,32 +100,34 @@ export class PartySessionService {
     }
 
     this.closeConnection();
-    backgroundStore.trigger.leaveRoom();
+    await leaveRoomState();
   }
 
   private async sendPlaybackUpdate(update: PlaybackUpdate): Promise<void> {
-    if (!backgroundSelectors.session.get()) {
+    const state = await getBackgroundState();
+    if (!state.session) {
       return;
     }
 
-    const controlledMediaId = backgroundSelectors.controlledTab.get()?.mediaId ?? null;
+    const controlledMediaId = state.controlledTab?.mediaId ?? null;
     if (controlledMediaId !== null && controlledMediaId !== update.mediaId) {
-      backgroundStore.trigger.setLastWarning({
-        message: 'Local media no longer matches the active room.',
-      });
+      await setLastWarning('Local media no longer matches the active room.');
       return;
     }
 
     const snapshot = await this.emitPlaybackUpdate(update);
-    backgroundStore.trigger.updateSessionRoom({ room: snapshot });
+    await updateSessionRoom(snapshot);
   }
 
-  private ensureMemberId(): string {
-    return backgroundSelectors.session.get()?.memberId ?? `${browser.runtime.id}:${crypto.randomUUID()}`;
+  private async ensureMemberId(): Promise<string> {
+    return (
+      (await getBackgroundState()).session?.memberId ??
+      `${browser.runtime.id}:${crypto.randomUUID()}`
+    );
   }
 
-  private assertNoActiveSession(): void {
-    if (backgroundSelectors.session.get()) {
+  private async assertNoActiveSession(): Promise<void> {
+    if ((await getBackgroundState()).session) {
       throw new Error(ACTIVE_ROOM_EXISTS_ERROR);
     }
   }
@@ -117,27 +141,24 @@ export class PartySessionService {
     this.connection = connection;
 
     connection.onConnectionError((error) => {
-      backgroundStore.trigger.reportError({ message: getErrorMessage(error) });
+      void reportBackgroundError(getErrorMessage(error));
     });
 
     connection.onReconnect(() => this.rejoinRoom());
 
     connection.on('room:state', (snapshot) => {
-      backgroundStore.trigger.updateSessionRoom({ room: snapshot });
+      void updateSessionRoom(snapshot);
     });
 
     connection.on('playback:state', (snapshot) => {
-      backgroundStore.trigger.updateSessionRoom({
-        room: snapshot,
-        applySnapshotToControlledTab: true,
-      });
+      void this.applyIncomingPlaybackSnapshot(snapshot);
     });
 
     return connection;
   }
 
   private async rejoinRoom(): Promise<void> {
-    const session = backgroundSelectors.session.get();
+    const session = (await getBackgroundState()).session;
     if (!session) {
       return;
     }
@@ -152,17 +173,17 @@ export class PartySessionService {
 
       await this.applyRoomResponse(response, true);
     } catch (error) {
-      backgroundStore.trigger.setSessionError({ message: getErrorMessage(error) });
+      await reportBackgroundError(getErrorMessage(error));
     }
   }
 
   private async sendMediaSwitchUpdate(mediaId: string): Promise<void> {
-    const session = backgroundSelectors.session.get();
-    if (!session) {
+    const state = await getBackgroundState();
+    if (!state.session) {
       return;
     }
 
-    if (backgroundSelectors.room.get()?.playback.mediaId === mediaId) {
+    if (state.room?.playback.mediaId === mediaId) {
       return;
     }
 
@@ -183,11 +204,16 @@ export class PartySessionService {
       memberId: response.memberId,
       streamingServiceId: response.snapshot.streamingServiceId,
     };
-    backgroundStore.trigger.setJoinedSession({
-      session: nextSession,
-      room: response.snapshot,
-      applySnapshotToControlledTab,
-    });
+    await setJoinedSession(nextSession, response.snapshot);
+
+    if (applySnapshotToControlledTab) {
+      this.options.onRoomSnapshotChanged();
+    }
+  }
+
+  private async applyIncomingPlaybackSnapshot(snapshot: PartySnapshot): Promise<void> {
+    await updateSessionRoom(snapshot);
+    this.options.onRoomSnapshotChanged();
   }
 
   private async emitRoomCreate(payload: CreateRoomRequest): Promise<RoomResponse> {
