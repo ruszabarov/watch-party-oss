@@ -103,6 +103,13 @@ export type PlaybackUpdate = z.output<typeof playbackUpdateRequestSchema>;
 export type CreateRoomRequest = z.output<typeof createRoomRequestSchema>;
 export type JoinRoomRequest = z.output<typeof joinRoomRequestSchema>;
 
+export type RoomClosedReason = 'evicted' | 'expired';
+
+export interface RoomClosedEvent {
+  roomCode: string;
+  reason: RoomClosedReason;
+}
+
 export interface ClientToServerEvents {
   'room:create': (payload: CreateRoomRequest, acknowledge: Acknowledge<RoomResponse>) => void;
   'room:join': (payload: JoinRoomRequest, acknowledge: Acknowledge<RoomResponse>) => void;
@@ -113,6 +120,7 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   'room:state': (snapshot: PartySnapshot) => void;
   'playback:state': (snapshot: PartySnapshot) => void;
+  'room:closed': (event: RoomClosedEvent) => void;
 }
 
 function sanitizeText(value: string, maxLength: number): string {

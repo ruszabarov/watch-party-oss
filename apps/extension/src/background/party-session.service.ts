@@ -7,6 +7,8 @@ import type {
   OperationResult,
   PartySnapshot,
   PlaybackUpdate,
+  RoomClosedEvent,
+  RoomClosedReason,
   RoomResponse,
   StreamingServiceId,
 } from '@open-watch-party/shared';
@@ -146,12 +148,16 @@ export class PartySessionService {
 
     connection.onReconnect(() => this.rejoinRoom());
 
-    connection.on('room:state', (snapshot) => {
+    connection.onRoomState((snapshot) => {
       void updateSessionRoom(snapshot);
     });
 
-    connection.on('playback:state', (snapshot) => {
+    connection.onPlaybackState((snapshot) => {
       void this.applyIncomingPlaybackSnapshot(snapshot);
+    });
+
+    connection.onRoomClosed((event) => {
+      void this.handleRoomClosed(connection, event);
     });
 
     return connection;
@@ -175,6 +181,24 @@ export class PartySessionService {
     } catch (error) {
       await reportBackgroundError(getErrorMessage(error));
     }
+  }
+
+  private async handleRoomClosed(
+    connection: RealtimeConnection,
+    event: RoomClosedEvent,
+  ): Promise<void> {
+    if (this.connection !== connection) {
+      return;
+    }
+
+    const session = (await getBackgroundState()).session;
+    if (!session || session.roomCode !== event.roomCode) {
+      return;
+    }
+
+    this.closeConnection();
+    await leaveRoomState();
+    await reportBackgroundError(roomClosedMessage(event.reason));
   }
 
   private async sendMediaSwitchUpdate(mediaId: string): Promise<void> {
@@ -246,5 +270,14 @@ export class PartySessionService {
     }
 
     return response.data;
+  }
+}
+
+function roomClosedMessage(reason: RoomClosedReason): string {
+  switch (reason) {
+    case 'evicted':
+      return 'The server is at capacity and this room was closed. Please create or join a new one.';
+    case 'expired':
+      return 'This room was closed due to inactivity.';
   }
 }

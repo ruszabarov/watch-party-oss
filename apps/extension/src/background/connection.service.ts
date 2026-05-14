@@ -59,10 +59,16 @@ export class RealtimeConnection {
     return this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck('playback:update', payload);
   }
 
-  on(event: 'room:state', handler: ServerToClientEvents['room:state']): void;
-  on(event: 'playback:state', handler: ServerToClientEvents['playback:state']): void;
-  on(event: keyof ServerToClientEvents, handler: (snapshot: PartySnapshot) => void): void {
-    this.socket.on(event, handler);
+  onRoomState(handler: ServerToClientEvents['room:state']): void {
+    this.socket.on('room:state', handler);
+  }
+
+  onPlaybackState(handler: ServerToClientEvents['playback:state']): void {
+    this.socket.on('playback:state', handler);
+  }
+
+  onRoomClosed(handler: ServerToClientEvents['room:closed']): void {
+    this.socket.on('room:closed', handler);
   }
 
   onReconnect(handler: () => void | Promise<void>): void {

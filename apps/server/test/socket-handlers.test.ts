@@ -4,6 +4,9 @@ import { MAX_TITLE_LENGTH } from '@open-watch-party/shared';
 
 import { RealtimeSocketService } from '../src/socket';
 
+/** Mirrors `DEFAULT_ROOM_IDLE_TTL_MS` in room.service (not exported). */
+const ROOM_IDLE_TTL_MS = 6 * 60 * 60 * 1_000;
+
 type RecordedEmission = {
   room: string;
   event: string;
@@ -398,6 +401,71 @@ describe('socket handlers', () => {
       room: room.snapshot.roomCode,
       event: 'room:state',
     });
+  });
+
+  it('does not emit room:closed when a room is removed by an explicit leave', () => {
+    const { io, socketService } = createSocketServiceContext();
+    const socket = connectSocket(socketService, 'socket-1');
+    const room = createRoom(socket);
+
+    let response: OperationResult<{ roomCode: string }> | null = null;
+    const roomLeaveHandler = socket.handlers.get('room:leave') as (
+      acknowledge: (response: OperationResult<{ roomCode: string }>) => void,
+    ) => void;
+    roomLeaveHandler((value) => {
+      response = value;
+    });
+
+    expect(response).toEqual({
+      ok: true,
+      data: { roomCode: room.snapshot.roomCode },
+    });
+    expect(io.emitted.filter((entry) => entry.event === 'room:closed')).toEqual([]);
+    expect(io.leftRooms).toEqual([room.snapshot.roomCode]);
+  });
+
+  it('emits room:closed with reason "evicted" when LRU drops a room', () => {
+    const { io, socketService } = createSocketServiceContext();
+    const firstSocket = connectSocket(socketService, 'socket-1');
+    const firstRoom = createRoom(firstSocket);
+
+    for (let roomIndex = 2; roomIndex <= 1_001; roomIndex += 1) {
+      const socket = connectSocket(socketService, `socket-${roomIndex}`);
+      createRoom(socket, {
+        memberId: `member-${roomIndex}`,
+        memberName: `Member ${roomIndex}`,
+        title: `Clip ${roomIndex}`,
+      });
+    }
+
+    expect(io.emitted.filter((entry) => entry.event === 'room:closed')).toEqual([
+      {
+        room: firstRoom.snapshot.roomCode,
+        event: 'room:closed',
+        payload: { roomCode: firstRoom.snapshot.roomCode, reason: 'evicted' },
+      },
+    ]);
+    expect(io.leftRooms).toContain(firstRoom.snapshot.roomCode);
+  });
+
+  it('emits room:closed with reason "expired" when a room idles past its TTL', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
+
+    const { io, socketService } = createSocketServiceContext();
+    const socket = connectSocket(socketService, 'socket-1');
+    const room = createRoom(socket);
+
+    vi.advanceTimersByTime(ROOM_IDLE_TTL_MS + 2_000);
+
+    expect(io.emitted.filter((entry) => entry.event === 'room:closed')).toEqual([
+      {
+        room: room.snapshot.roomCode,
+        event: 'room:closed',
+        payload: { roomCode: room.snapshot.roomCode, reason: 'expired' },
+      },
+    ]);
+    expect(io.leftRooms).toContain(room.snapshot.roomCode);
   });
 
   it('broadcasts room state when a bound socket disconnects', () => {

@@ -9,6 +9,7 @@ import {
   type OperationResult,
   type PartySnapshot,
   type PlaybackUpdate,
+  type RoomClosedReason,
   type RoomResponse,
   type ServerToClientEvents,
 } from '@open-watch-party/shared';
@@ -28,6 +29,7 @@ import {
   invalidPayload,
   success,
 } from './utils';
+import type { RoomStoreRemovalReason } from './room.store';
 
 type ConnectionSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -58,7 +60,14 @@ export class RealtimeSocketService {
 
   constructor(private readonly io: RealtimeServer) {
     this.rooms = new RoomService({
-      onRoomRemoved: (room) => {
+      onRoomRemoved: (room, reason) => {
+        const closedReason = toRoomClosedReason(reason);
+        if (closedReason) {
+          this.io.to(room.roomCode).emit('room:closed', {
+            roomCode: room.roomCode,
+            reason: closedReason,
+          });
+        }
         this.sessions.removeRoom(room.roomCode);
         this.io.socketsLeave(room.roomCode);
       },
@@ -257,6 +266,17 @@ export class RealtimeSocketService {
       'session:duplicate_socket_replaced',
     );
     this.io.sockets.sockets.get(replacedSocket.socketId)?.disconnect(true);
+  }
+}
+
+function toRoomClosedReason(reason: RoomStoreRemovalReason): RoomClosedReason | null {
+  switch (reason) {
+    case 'evict':
+      return 'evicted';
+    case 'expire':
+      return 'expired';
+    default:
+      return null;
   }
 }
 
