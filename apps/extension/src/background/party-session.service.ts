@@ -44,12 +44,6 @@ export class PartySessionService {
     });
   }
 
-  updateRoomMediaFromControlledTab(mediaId: string): void {
-    void this.sendMediaSwitchUpdate(mediaId).catch((error) => {
-      void reportBackgroundError(getErrorMessage(error));
-    });
-  }
-
   async resumeStoredSession(): Promise<void> {
     if (!(await getBackgroundState()).session) {
       return;
@@ -199,24 +193,6 @@ export class PartySessionService {
     this.closeConnection();
     await leaveRoomState();
     await reportBackgroundError(roomClosedMessage(event.reason));
-  }
-
-  private async sendMediaSwitchUpdate(mediaId: string): Promise<void> {
-    const state = await getBackgroundState();
-    if (!state.session) {
-      return;
-    }
-
-    if (state.room?.playback.mediaId === mediaId) {
-      return;
-    }
-
-    await this.sendPlaybackUpdate({
-      mediaId,
-      title: '',
-      positionSec: 0,
-      playing: false,
-    });
   }
 
   private async applyRoomResponse(

@@ -18,7 +18,6 @@ export interface RoomState {
   readonly streamingServiceId: StreamingServiceId;
   members: Map<string, PartyMember>;
   playback: PlaybackState;
-  sequence: number;
   createdAt: number;
 }
 
@@ -46,14 +45,12 @@ export function createRoomState(
 ): RoomState {
   assertValidMediaId(request.streamingServiceId, request.initialPlayback.mediaId);
 
-  const sequence = 1;
   const playback: PlaybackState = {
     ...request.initialPlayback,
     streamingServiceId: request.streamingServiceId,
     title: sanitizeOptionalTitle(request.initialPlayback.title),
     updatedAt: now,
     sourceMemberId: request.memberId,
-    sequence,
   };
 
   return {
@@ -61,7 +58,6 @@ export function createRoomState(
     streamingServiceId: request.streamingServiceId,
     members: new Map<string, PartyMember>(),
     playback,
-    sequence,
     createdAt: now,
   };
 }
@@ -95,7 +91,6 @@ export function applyPlaybackUpdate(
 ): PlaybackState {
   assertValidMediaId(room.streamingServiceId, update.mediaId);
 
-  room.sequence += 1;
   const playback: PlaybackState = {
     streamingServiceId: room.streamingServiceId,
     mediaId: update.mediaId,
@@ -103,7 +98,6 @@ export function applyPlaybackUpdate(
     positionSec: normalizePosition(update.positionSec),
     updatedAt: now,
     sourceMemberId: memberId,
-    sequence: room.sequence,
   };
 
   if (update.title !== undefined) {
@@ -139,7 +133,6 @@ export function toPartySnapshot(room: RoomState, now = Date.now()): PartySnapsho
       return left.joinedAt - right.joinedAt;
     }),
     playback: resolvePlaybackState(room.playback, now),
-    sequence: room.sequence,
     createdAt: room.createdAt,
   };
 }

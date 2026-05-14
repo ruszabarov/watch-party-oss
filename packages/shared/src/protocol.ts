@@ -22,7 +22,6 @@ export interface PlaybackState {
   positionSec: number;
   updatedAt: number;
   sourceMemberId: string;
-  sequence: number;
 }
 
 export interface PartySnapshot {
@@ -31,7 +30,6 @@ export interface PartySnapshot {
   watchUrl: string;
   members: PartyMember[];
   playback: PlaybackState;
-  sequence: number;
   createdAt: number;
 }
 

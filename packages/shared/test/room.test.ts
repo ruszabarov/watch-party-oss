@@ -69,9 +69,7 @@ describe('room reducer', () => {
       1_600,
     );
 
-    expect(room.sequence).toBe(3);
     expect(room.playback.playing).toBe(false);
-    expect(room.playback.sequence).toBe(3);
     expect(room.playback.sourceMemberId).toBe('member-b');
   });
 

@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { PartySnapshot, PlaybackUpdate, StreamingServiceId } from '@open-watch-party/shared';
-import { sendMessage } from '../messaging';
+import { sendMessage, type ReadyWatchReport, type WatchReport } from '../messaging';
 import {
   findStreamingServiceByUrl,
   getStreamingServiceDefinition,
@@ -14,15 +14,11 @@ function isStreamingServiceUrl(
   return URL.canParse(rawUrl) && definition.matchesUrl(new URL(rawUrl));
 }
 
-function roomMatchesMediaId(room: PartySnapshot | null, mediaId: string): room is PartySnapshot {
-  return room !== null && room.playback.mediaId === mediaId;
-}
-
 export class ControlledTabService {
   constructor(
     private readonly options: {
       onControlledTabClosed: () => void;
-      onControlledTabMediaSwitchRequested: (mediaId: string) => void;
+      onControlledTabPlaybackReady: (playback: PlaybackUpdate) => void;
     },
   ) {}
 
@@ -36,16 +32,20 @@ export class ControlledTabService {
     });
   }
 
-  async handleContentContext(tabId: number, mediaId: string): Promise<void> {
+  async handleWatchReport(tabId: number, report: WatchReport): Promise<void> {
     const state = await getBackgroundState();
     const room = state.room;
     if (!room) {
       return;
     }
 
+    if (report.streamingServiceId !== room.streamingServiceId) {
+      return;
+    }
+
     const controlledTab = state.controlledTab;
     if (!controlledTab) {
-      await this.adoptTabForRoom(tabId, mediaId, room);
+      await this.adoptTabForRoom(tabId, report, room);
       return;
     }
 
@@ -53,20 +53,16 @@ export class ControlledTabService {
       return;
     }
 
-    const shouldRequestMediaSwitch =
-      controlledTab.mediaId !== mediaId && room.playback.mediaId !== mediaId;
-
     await setControlledTab({
       tabId,
-      mediaId,
+      mediaId: report.mediaId,
     });
 
-    if (shouldRequestMediaSwitch) {
-      this.options.onControlledTabMediaSwitchRequested(mediaId);
+    if (report.phase !== 'ready') {
       return;
     }
 
-    await this.applySnapshotToControlledTab();
+    this.options.onControlledTabPlaybackReady(toPlaybackUpdate(report));
   }
 
   async applySnapshotToControlledTab(): Promise<void> {
@@ -100,10 +96,6 @@ export class ControlledTabService {
     }
   }
 
-  async isControlledTab(tabId: number): Promise<boolean> {
-    return tabId === (await getBackgroundState()).controlledTab?.tabId;
-  }
-
   async requireControllableWatchTab(
     tabId: number,
   ): Promise<{ streamingServiceId: StreamingServiceId; playback: PlaybackUpdate }> {
@@ -119,20 +111,24 @@ export class ControlledTabService {
     }
 
     const expectedMediaId = match.streamingService.extractMediaId(new URL(tab.url!));
-    const playback = await this.requestPlaybackFromTab(tabId);
+    const report = await this.requestWatchReportFromTab(tabId);
 
-    if (!playback || playback.mediaId !== expectedMediaId) {
+    if (
+      !report ||
+      report.streamingServiceId !== match.streamingServiceId ||
+      report.mediaId !== expectedMediaId
+    ) {
       throw new Error(
         `${match.streamingService.descriptor.label} playback state is not ready yet.`,
       );
     }
 
-    return { streamingServiceId: match.streamingServiceId, playback };
+    return { streamingServiceId: match.streamingServiceId, playback: toPlaybackUpdate(report) };
   }
 
-  private async requestPlaybackFromTab(tabId: number): Promise<PlaybackUpdate | null> {
+  private async requestWatchReportFromTab(tabId: number): Promise<ReadyWatchReport | null> {
     try {
-      const response = await sendMessage('party:request-playback', undefined, { tabId });
+      const response = await sendMessage('party:request-watch-report', undefined, { tabId });
       return response ?? null;
     } catch {
       return null;
@@ -141,13 +137,15 @@ export class ControlledTabService {
 
   private async adoptTabForRoom(
     tabId: number,
-    mediaId: string,
-    room: PartySnapshot | null,
+    report: WatchReport,
+    room: PartySnapshot,
   ): Promise<void> {
-    if (!roomMatchesMediaId(room, mediaId) || (await getBackgroundState()).controlledTab) return;
+    if (report.phase !== 'ready' || room.playback.mediaId !== report.mediaId) {
+      return;
+    }
 
     void sendMessage('party:apply-snapshot', room, { tabId }).catch(() => undefined);
-    await setControlledTab({ tabId, mediaId });
+    await setControlledTab({ tabId, mediaId: report.mediaId });
     await setLastWarning(null);
   }
 
@@ -171,4 +169,13 @@ export class ControlledTabService {
     await clearControlledTab();
     this.options.onControlledTabClosed();
   }
+}
+
+function toPlaybackUpdate(report: ReadyWatchReport): PlaybackUpdate {
+  return {
+    mediaId: report.mediaId,
+    title: report.title ?? '',
+    positionSec: report.positionSec,
+    playing: report.playing,
+  };
 }

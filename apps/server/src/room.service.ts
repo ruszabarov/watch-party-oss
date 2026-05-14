@@ -163,7 +163,6 @@ export class RoomService {
         mediaId: playback.mediaId,
         playing: playback.playing,
         positionSec: playback.positionSec,
-        playbackSequence: playback.sequence,
       },
       'playback:update_ok',
     );

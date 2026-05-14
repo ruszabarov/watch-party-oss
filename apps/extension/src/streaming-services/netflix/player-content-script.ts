@@ -1,7 +1,9 @@
 import {
   NETFLIX_PLAYER_REQUEST_SOURCE,
+  NETFLIX_PLAYER_RESPONSE_SOURCE,
   type NetflixPlayerCommand,
   type NetflixRpcRequest,
+  type NetflixPlayerStatusResponse,
 } from './player-rpc';
 import type { NetflixPlayer } from './window';
 
@@ -37,10 +39,24 @@ export function runNetflixPlayerContentScript(): void {
     }
 
     const data = event.data as Partial<NetflixRpcRequest> | null;
-    if (data?.source !== NETFLIX_PLAYER_REQUEST_SOURCE || !data.command) {
+    if (data?.source !== NETFLIX_PLAYER_REQUEST_SOURCE) {
       return;
     }
 
-    applyCommand(data.command);
+    if ('command' in data && data.command) {
+      applyCommand(data.command);
+      return;
+    }
+
+    if ('query' in data && data.query === 'status' && typeof data.requestId === 'string') {
+      window.postMessage(
+        {
+          source: NETFLIX_PLAYER_RESPONSE_SOURCE,
+          requestId: data.requestId,
+          hasPlayer: getNetflixPlayer() !== null,
+        } satisfies NetflixPlayerStatusResponse,
+        '*',
+      );
+    }
   });
 }

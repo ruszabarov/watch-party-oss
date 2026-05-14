@@ -1,8 +1,7 @@
 import { STREAMING_SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
-import type { PlaybackUpdate } from '@open-watch-party/shared';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
-import { onMessage, sendMessage } from '../../messaging';
+import { onMessage, sendMessage, type ReadyWatchReport, type WatchReport } from '../../messaging';
 import { isYoutubeAdPlayback } from './ads';
 
 const YOUTUBE = STREAMING_SERVICE_DEFINITION_BY_ID.youtube;
@@ -21,7 +20,9 @@ function isAdShowing(player: Element | null): boolean {
 export function runYoutubeContentScript(ctx: ContentScriptContext): void {
   let activeVideo: HTMLVideoElement | null = null;
   let activePlayer: Element | null = null;
-  let lastMediaId: string | null = null;
+  let currentMediaId: string | null = null;
+  let hasSeenMedia = false;
+  let timelineReady = false;
   let wasAdShowing = false;
   let suppressUntil = 0;
   let pendingFrame: number | null = null;
@@ -32,33 +33,61 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
     return mediaId;
   };
 
-  const readPlayback = (): PlaybackUpdate | null => {
+  const readWatchReport = (): ReadyWatchReport | null => {
     const mediaId = readMediaId();
-    if (mediaId === null || !activeVideo || isAdShowing(activePlayer)) return null;
+    if (
+      mediaId === null ||
+      !activeVideo ||
+      !timelineReady ||
+      performance.now() < suppressUntil ||
+      isAdShowing(activePlayer)
+    ) {
+      return null;
+    }
+
     return {
+      streamingServiceId: 'youtube',
       mediaId,
+      phase: 'ready',
       title: document.title,
       positionSec: Number(activeVideo.currentTime.toFixed(3)),
       playing: !activeVideo.paused,
     };
   };
 
-  const sendContextIfChanged = () => {
-    const mediaId = readMediaId();
-    if (mediaId === null || mediaId === lastMediaId) return;
-    lastMediaId = mediaId;
-    void sendMessage('content:context', mediaId).catch(() => undefined);
+  const sendReport = (report: WatchReport) => {
+    void sendMessage('content:watch-report', report).catch(() => undefined);
   };
 
-  const sendPlaybackUpdate = () => {
-    if (performance.now() < suppressUntil) return;
-    const update = readPlayback();
-    if (update) void sendMessage('content:playback-update', update).catch(() => undefined);
+  const syncMediaGeneration = () => {
+    const mediaId = YOUTUBE.extractMediaId(new URL(location.href));
+    if (mediaId === currentMediaId) return;
+
+    const isInitialMedia = !hasSeenMedia;
+    currentMediaId = mediaId;
+    hasSeenMedia = true;
+    timelineReady = isInitialMedia && Boolean(activeVideo?.readyState);
+
+    if (mediaId !== null) {
+      sendReport({
+        streamingServiceId: 'youtube',
+        mediaId,
+        phase: 'loading',
+      });
+    }
   };
 
-  const onVideoEvent = () => {
+  const sendPlaybackReport = () => {
+    const report = readWatchReport();
+    if (report) sendReport(report);
+  };
+
+  const onVideoEvent = (event: Event) => {
     refresh();
-    sendPlaybackUpdate();
+    if (!timelineReady && event.type !== 'loadedmetadata') return;
+
+    timelineReady = true;
+    sendPlaybackReport();
   };
 
   const playerObserver = new MutationObserver(scheduleRefresh);
@@ -90,11 +119,13 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
     const adShowing = isAdShowing(activePlayer);
     if (wasAdShowing && !adShowing) {
       suppressUntil = performance.now() + SUPPRESSION_MS;
-      lastMediaId = null;
+      timelineReady = false;
+      syncMediaGeneration();
     }
     wasAdShowing = adShowing;
 
-    sendContextIfChanged();
+    syncMediaGeneration();
+    sendPlaybackReport();
   }
 
   function scheduleRefresh() {
@@ -111,7 +142,7 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
 
   ctx.addEventListener(window, 'wxt:locationchange', scheduleRefresh);
 
-  ctx.onInvalidated(onMessage('party:request-playback', () => readPlayback()));
+  ctx.onInvalidated(onMessage('party:request-watch-report', () => readWatchReport()));
 
   ctx.onInvalidated(
     onMessage('party:apply-snapshot', ({ data }) => {

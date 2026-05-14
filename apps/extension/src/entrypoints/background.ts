@@ -1,6 +1,4 @@
 import { defineBackground } from 'wxt/utils/define-background';
-import type { PlaybackUpdate } from '@open-watch-party/shared';
-
 import { getErrorMessage } from '~/utils/errors.js';
 import { ControlledTabService } from '../background/controlled-tab.service';
 import { PartySessionService } from '../background/party-session.service';
@@ -28,8 +26,8 @@ class BackgroundController {
       onControlledTabClosed: () => {
         this.leaveRoomAfterControlledTabClosed();
       },
-      onControlledTabMediaSwitchRequested: (mediaId) => {
-        this.partySessionService.updateRoomMediaFromControlledTab(mediaId);
+      onControlledTabPlaybackReady: (playback) => {
+        this.partySessionService.updateRoomPlaybackFromControlledTab(playback);
       },
     });
   }
@@ -97,25 +95,10 @@ class BackgroundController {
   }
 
   private registerContentHandlers(): void {
-    onMessage('content:context', async ({ data: mediaId, sender }) => {
+    onMessage('content:watch-report', async ({ data, sender }) => {
       if (sender.tab?.id !== undefined) {
-        await this.controlledTabService.handleContentContext(sender.tab.id, mediaId);
+        await this.controlledTabService.handleWatchReport(sender.tab.id, data);
       }
     });
-
-    onMessage('content:playback-update', ({ data, sender }) => {
-      void this.handlePlaybackUpdateFromContent(sender.tab?.id, data);
-    });
-  }
-
-  private async handlePlaybackUpdateFromContent(
-    tabId: number | undefined,
-    data: PlaybackUpdate,
-  ): Promise<void> {
-    if (tabId === undefined || !(await this.controlledTabService.isControlledTab(tabId))) {
-      return;
-    }
-
-    this.partySessionService.updateRoomPlaybackFromControlledTab(data);
   }
 }
