@@ -1,7 +1,7 @@
 import { STREAMING_SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
-import { onMessage, sendMessage, type ReadyWatchReport, type WatchReport } from '../../messaging';
+import { onMessage, sendMessage, type WatchReport } from '../../messaging';
 import {
   NETFLIX_PLAYER_REQUEST_SOURCE,
   NETFLIX_PLAYER_RESPONSE_SOURCE,
@@ -9,9 +9,17 @@ import {
   type NetflixPlayerStatusResponse,
   type NetflixRpcRequest,
 } from './player-rpc';
+import { isVideoTimelineReady } from '../playback-readiness';
 
 const NETFLIX = STREAMING_SERVICE_DEFINITION_BY_ID.netflix;
-const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'ended'] as const;
+const VIDEO_EVENTS = [
+  'play',
+  'pause',
+  'seeked',
+  'loadedmetadata',
+  'durationchange',
+  'ended',
+] as const;
 const SEEK_THRESHOLD_SEC = 5;
 const SUPPRESSION_MS = 750;
 const PLAYER_STATUS_TIMEOUT_MS = 250;
@@ -25,9 +33,6 @@ function sendPlayerCommand(command: NetflixPlayerCommand): void {
 
 export function runNetflixContentScript(ctx: ContentScriptContext): void {
   let activeVideo: HTMLVideoElement | null = null;
-  let currentMediaId: string | null = null;
-  let hasSeenMedia = false;
-  let timelineReady = false;
   let suppressUntil = 0;
   let pendingFrame: number | null = null;
 
@@ -38,16 +43,19 @@ export function runNetflixContentScript(ctx: ContentScriptContext): void {
     return mediaId;
   };
 
-  const readWatchReport = (): ReadyWatchReport | null => {
+  const readWatchReport = (): WatchReport | null => {
     const mediaId = readMediaId();
-    if (mediaId === null || !activeVideo || !timelineReady || performance.now() < suppressUntil) {
+    if (
+      mediaId === null ||
+      !isVideoTimelineReady(activeVideo) ||
+      performance.now() < suppressUntil
+    ) {
       return null;
     }
 
     return {
       streamingServiceId: 'netflix',
       mediaId,
-      phase: 'ready',
       title: document.title,
       positionSec: activeVideo.currentTime,
       playing: !activeVideo.paused,
@@ -96,48 +104,17 @@ export function runNetflixContentScript(ctx: ContentScriptContext): void {
     });
   };
 
-  const syncMediaGeneration = () => {
-    const mediaId = NETFLIX.extractMediaId(new URL(location.href));
-    if (mediaId === currentMediaId) return;
-
-    const isInitialMedia = !hasSeenMedia;
-    currentMediaId = mediaId;
-    hasSeenMedia = true;
-    timelineReady = isInitialMedia && Boolean(activeVideo?.readyState);
-
-    if (mediaId !== null) {
-      sendReport({
-        streamingServiceId: 'netflix',
-        mediaId,
-        phase: 'loading',
-      });
-    }
-  };
-
   const sendPlaybackReport = () => {
     const report = readWatchReport();
     if (!report) return;
 
     void requestPlayerStatus().then((hasPlayer) => {
-      if (hasPlayer === false) {
-        sendReport({
-          streamingServiceId: 'netflix',
-          mediaId: report.mediaId,
-          phase: 'loading',
-        });
-        return;
-      }
-
-      sendReport(report);
+      if (hasPlayer !== false) sendReport(report);
     });
   };
 
-  const onVideoEvent = (event: Event) => {
+  const onVideoEvent = () => {
     refresh();
-    if (!timelineReady && event.type !== 'loadedmetadata') return;
-
-    timelineReady = true;
-    sendPlaybackReport();
   };
 
   function refresh() {
@@ -151,7 +128,6 @@ export function runNetflixContentScript(ctx: ContentScriptContext): void {
         for (const e of VIDEO_EVENTS) activeVideo.addEventListener(e, onVideoEvent);
       }
     }
-    syncMediaGeneration();
     sendPlaybackReport();
   }
 
@@ -169,7 +145,12 @@ export function runNetflixContentScript(ctx: ContentScriptContext): void {
 
   ctx.addEventListener(window, 'wxt:locationchange', scheduleRefresh);
 
-  ctx.onInvalidated(onMessage('party:request-watch-report', () => readWatchReport()));
+  ctx.onInvalidated(
+    onMessage('party:request-watch-report', () => {
+      refresh();
+      return readWatchReport();
+    }),
+  );
 
   ctx.onInvalidated(
     onMessage('party:apply-snapshot', ({ data }) => {

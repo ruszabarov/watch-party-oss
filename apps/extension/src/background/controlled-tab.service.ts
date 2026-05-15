@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { PartySnapshot, PlaybackUpdate, StreamingServiceId } from '@open-watch-party/shared';
-import { sendMessage, type ReadyWatchReport, type WatchReport } from '../messaging';
+import { sendMessage, type WatchReport } from '../messaging';
 import {
   findStreamingServiceByUrl,
   getStreamingServiceDefinition,
@@ -58,10 +58,6 @@ export class ControlledTabService {
       mediaId: report.mediaId,
     });
 
-    if (report.phase !== 'ready') {
-      return;
-    }
-
     this.options.onControlledTabPlaybackReady(toPlaybackUpdate(report));
   }
 
@@ -69,7 +65,8 @@ export class ControlledTabService {
     const { room, controlledTab } = await getBackgroundState();
     if (!room || !controlledTab) return;
 
-    if (controlledTab.mediaId !== room.playback.mediaId) {
+    const tabMediaId = await this.readWatchTabMediaId(controlledTab.tabId, room.streamingServiceId);
+    if (tabMediaId !== room.playback.mediaId) {
       await this.navigateControlledTabToRoom(controlledTab.tabId, room.watchUrl, false);
       return;
     }
@@ -126,7 +123,7 @@ export class ControlledTabService {
     return { streamingServiceId: match.streamingServiceId, playback: toPlaybackUpdate(report) };
   }
 
-  private async requestWatchReportFromTab(tabId: number): Promise<ReadyWatchReport | null> {
+  private async requestWatchReportFromTab(tabId: number): Promise<WatchReport | null> {
     try {
       const response = await sendMessage('party:request-watch-report', undefined, { tabId });
       return response ?? null;
@@ -140,7 +137,7 @@ export class ControlledTabService {
     report: WatchReport,
     room: PartySnapshot,
   ): Promise<void> {
-    if (report.phase !== 'ready' || room.playback.mediaId !== report.mediaId) {
+    if (room.playback.mediaId !== report.mediaId) {
       return;
     }
 
@@ -169,9 +166,22 @@ export class ControlledTabService {
     await clearControlledTab();
     this.options.onControlledTabClosed();
   }
+
+  private async readWatchTabMediaId(
+    tabId: number,
+    streamingServiceId: StreamingServiceId,
+  ): Promise<string | null> {
+    const tab = await browser.tabs.get(tabId);
+    const match = findStreamingServiceByUrl(tab.url);
+    if (!match || match.streamingServiceId !== streamingServiceId || !match.isWatchPage) {
+      return null;
+    }
+
+    return match.streamingService.extractMediaId(new URL(tab.url!));
+  }
 }
 
-function toPlaybackUpdate(report: ReadyWatchReport): PlaybackUpdate {
+function toPlaybackUpdate(report: WatchReport): PlaybackUpdate {
   return {
     mediaId: report.mediaId,
     title: report.title ?? '',

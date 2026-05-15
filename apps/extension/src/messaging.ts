@@ -11,27 +11,17 @@ export interface JoinRoomRequest {
   tabId: number;
 }
 
-type WatchReportBase = {
+export type WatchReport = {
   streamingServiceId: StreamingServiceId;
   mediaId: string;
+  title?: string;
+  positionSec: number;
+  playing: boolean;
 };
-
-export type WatchReport =
-  | (WatchReportBase & {
-      phase: 'loading';
-    })
-  | (WatchReportBase & {
-      phase: 'ready';
-      title?: string;
-      positionSec: number;
-      playing: boolean;
-    });
-
-export type ReadyWatchReport = Extract<WatchReport, { phase: 'ready' }>;
 
 export interface ExtensionProtocolMap {
   'content:watch-report': (payload: WatchReport) => void;
-  'party:request-watch-report': () => ReadyWatchReport | null;
+  'party:request-watch-report': () => WatchReport | null;
   'party:apply-snapshot': (payload: PartySnapshot) => void;
   'popup:create-room': (payload: CreateRoomRequest) => void;
   'popup:join-room': (payload: JoinRoomRequest) => void;

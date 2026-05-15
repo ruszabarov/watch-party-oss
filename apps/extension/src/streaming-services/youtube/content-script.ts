@@ -1,11 +1,19 @@
 import { STREAMING_SERVICE_DEFINITION_BY_ID } from '@open-watch-party/shared';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
-import { onMessage, sendMessage, type ReadyWatchReport, type WatchReport } from '../../messaging';
+import { onMessage, sendMessage, type WatchReport } from '../../messaging';
+import { isVideoTimelineReady } from '../playback-readiness';
 import { isYoutubeAdPlayback } from './ads';
 
 const YOUTUBE = STREAMING_SERVICE_DEFINITION_BY_ID.youtube;
-const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'loadedmetadata', 'ended'] as const;
+const VIDEO_EVENTS = [
+  'play',
+  'pause',
+  'seeked',
+  'loadedmetadata',
+  'durationchange',
+  'ended',
+] as const;
 const SEEK_THRESHOLD_SEC = 1.5;
 const SUPPRESSION_MS = 750;
 
@@ -20,9 +28,6 @@ function isAdShowing(player: Element | null): boolean {
 export function runYoutubeContentScript(ctx: ContentScriptContext): void {
   let activeVideo: HTMLVideoElement | null = null;
   let activePlayer: Element | null = null;
-  let currentMediaId: string | null = null;
-  let hasSeenMedia = false;
-  let timelineReady = false;
   let wasAdShowing = false;
   let suppressUntil = 0;
   let pendingFrame: number | null = null;
@@ -33,12 +38,11 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
     return mediaId;
   };
 
-  const readWatchReport = (): ReadyWatchReport | null => {
+  const readWatchReport = (): WatchReport | null => {
     const mediaId = readMediaId();
     if (
       mediaId === null ||
-      !activeVideo ||
-      !timelineReady ||
+      !isVideoTimelineReady(activeVideo) ||
       performance.now() < suppressUntil ||
       isAdShowing(activePlayer)
     ) {
@@ -48,7 +52,6 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
     return {
       streamingServiceId: 'youtube',
       mediaId,
-      phase: 'ready',
       title: document.title,
       positionSec: Number(activeVideo.currentTime.toFixed(3)),
       playing: !activeVideo.paused,
@@ -59,35 +62,13 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
     void sendMessage('content:watch-report', report).catch(() => undefined);
   };
 
-  const syncMediaGeneration = () => {
-    const mediaId = YOUTUBE.extractMediaId(new URL(location.href));
-    if (mediaId === currentMediaId) return;
-
-    const isInitialMedia = !hasSeenMedia;
-    currentMediaId = mediaId;
-    hasSeenMedia = true;
-    timelineReady = isInitialMedia && Boolean(activeVideo?.readyState);
-
-    if (mediaId !== null) {
-      sendReport({
-        streamingServiceId: 'youtube',
-        mediaId,
-        phase: 'loading',
-      });
-    }
-  };
-
   const sendPlaybackReport = () => {
     const report = readWatchReport();
     if (report) sendReport(report);
   };
 
-  const onVideoEvent = (event: Event) => {
+  const onVideoEvent = () => {
     refresh();
-    if (!timelineReady && event.type !== 'loadedmetadata') return;
-
-    timelineReady = true;
-    sendPlaybackReport();
   };
 
   const playerObserver = new MutationObserver(scheduleRefresh);
@@ -119,12 +100,9 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
     const adShowing = isAdShowing(activePlayer);
     if (wasAdShowing && !adShowing) {
       suppressUntil = performance.now() + SUPPRESSION_MS;
-      timelineReady = false;
-      syncMediaGeneration();
     }
     wasAdShowing = adShowing;
 
-    syncMediaGeneration();
     sendPlaybackReport();
   }
 
@@ -142,7 +120,12 @@ export function runYoutubeContentScript(ctx: ContentScriptContext): void {
 
   ctx.addEventListener(window, 'wxt:locationchange', scheduleRefresh);
 
-  ctx.onInvalidated(onMessage('party:request-watch-report', () => readWatchReport()));
+  ctx.onInvalidated(
+    onMessage('party:request-watch-report', () => {
+      refresh();
+      return readWatchReport();
+    }),
+  );
 
   ctx.onInvalidated(
     onMessage('party:apply-snapshot', ({ data }) => {
