@@ -8,15 +8,23 @@ import {
 import type { NetflixPlayer } from './window';
 
 function getNetflixPlayer(): NetflixPlayer | null {
-  const videoPlayer = window.netflix?.appContext?.state?.playerApp?.getAPI?.().videoPlayer;
-  const sessionId = videoPlayer?.getAllPlayerSessionIds?.()[0];
-  return sessionId ? (videoPlayer?.getVideoPlayerBySessionId(sessionId) ?? null) : null;
+  try {
+    const videoPlayer = window.netflix?.appContext?.state?.playerApp?.getAPI?.().videoPlayer;
+    const sessionId = videoPlayer?.getAllPlayerSessionIds?.()[0];
+    return sessionId ? (videoPlayer?.getVideoPlayerBySessionId(sessionId) ?? null) : null;
+  } catch {
+    return null;
+  }
 }
 
-function applyCommand(command: NetflixPlayerCommand): void {
+function getVideo(): HTMLVideoElement | null {
+  return document.querySelector<HTMLVideoElement>('video');
+}
+
+function applyViaApi(command: NetflixPlayerCommand): boolean {
   try {
     const player = getNetflixPlayer();
-    if (!player) return;
+    if (!player) return false;
 
     if (command.positionMs !== undefined) {
       player.seek(command.positionMs);
@@ -27,14 +35,33 @@ function applyCommand(command: NetflixPlayerCommand): void {
     } else {
       player.pause();
     }
+
+    return true;
   } catch {
-    // Netflix player API rejected the command; nothing we can do here.
+    return false;
   }
+}
+
+function applyViaVideoElement(command: NetflixPlayerCommand): void {
+  const video = getVideo();
+  if (!video) return;
+
+  if (command.playing && video.paused) {
+    void video.play().catch(() => {});
+  } else if (!command.playing && !video.paused) {
+    video.pause();
+  }
+}
+
+function applyCommand(command: NetflixPlayerCommand): void {
+  if (applyViaApi(command)) return;
+
+  applyViaVideoElement(command);
 }
 
 export function runNetflixPlayerContentScript(): void {
   window.addEventListener('message', (event: MessageEvent) => {
-    if (event.source !== window) {
+    if (event.source !== window || event.origin !== window.origin) {
       return;
     }
 
@@ -53,7 +80,7 @@ export function runNetflixPlayerContentScript(): void {
         {
           source: NETFLIX_PLAYER_RESPONSE_SOURCE,
           requestId: data.requestId,
-          hasPlayer: getNetflixPlayer() !== null,
+          hasPlayer: getNetflixPlayer() !== null || getVideo() !== null,
         } satisfies NetflixPlayerStatusResponse,
         '*',
       );
